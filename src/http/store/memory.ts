@@ -1,4 +1,9 @@
-import type { KeyUsage, Store } from "./types.js";
+import {
+  emailIndex,
+  type KeyRecord,
+  type KeyUsage,
+  type Store,
+} from "./types.js";
 
 /** In-memory Store for tests and local dev (RL-4). State is per process and lost on restart. */
 export class MemoryStore implements Store {
@@ -7,6 +12,8 @@ export class MemoryStore implements Store {
     { value: number; expiresAtSec: number }
   >();
   private readonly usage = new Map<string, Map<string, number>>();
+  private readonly keys = new Map<string, KeyRecord>();
+  private readonly emails = new Set<string>();
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -53,11 +60,25 @@ export class MemoryStore implements Store {
     );
   }
 
+  createKey(record: KeyRecord): Promise<boolean> {
+    const index = emailIndex(record.email);
+    if (this.emails.has(index)) return Promise.resolve(false);
+    this.emails.add(index);
+    this.keys.set(record.keyHash, { ...record });
+    return Promise.resolve(true);
+  }
+
+  getKey(keyHash: string): Promise<KeyRecord | null> {
+    const record = this.keys.get(keyHash);
+    return Promise.resolve(record ? { ...record } : null);
+  }
+
   /** Everything held, for tests that assert no plaintext key is stored (AUTH-3). */
   snapshot(): string {
     return JSON.stringify({
       counters: [...this.counters],
       usage: [...this.usage].map(([k, d]) => [k, [...d]]),
+      keys: [...this.keys],
     });
   }
 }

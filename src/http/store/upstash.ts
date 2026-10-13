@@ -1,4 +1,9 @@
-import type { KeyUsage, Store } from "./types.js";
+import {
+  emailIndex,
+  type KeyRecord,
+  type KeyUsage,
+  type Store,
+} from "./types.js";
 
 /** Upstash Redis REST credentials (DECISIONS.md D-1). */
 export interface UpstashConfig {
@@ -48,6 +53,8 @@ function utcDayOf(ms: number): string {
  * Keys: counters are whatever the caller passes (rate limits); usage is `usage:c:<key_id>:<day>`
  * (successful checks that day) plus `usage:d:<day>` (the key_ids active that day). Both expire
  * USAGE_RETENTION_DAYS after their day ends, and a day with a count is an active day.
+ * Self-serve keys (KEY-5) are `key:h:<key_hash>` (the JSON record, no expiry) and
+ * `key:e:<sha256(email)>` (the key_hash, written with NX so one email gets one key).
  */
 export class UpstashStore implements Store {
   constructor(
@@ -150,5 +157,34 @@ export class UpstashStore implements Store {
     return [...byKey]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([keyId, counts]) => ({ keyId, counts }));
+  }
+
+  async createKey(record: KeyRecord): Promise<boolean> {
+    const recordKey = `key:h:${record.keyHash}`;
+    // The record goes first: a crash before the email index leaves an unreachable record, never
+    // an email that is locked out of getting a key.
+    const [, claimed] = await this.send("/pipeline", [
+      ["SET", recordKey, JSON.stringify(record)],
+      ["SET", `key:e:${emailIndex(record.email)}`, record.keyHash, "NX"],
+    ]);
+    if (claimed === "OK") return true;
+    await this.send("/pipeline", [["DEL", recordKey]]);
+    return false;
+  }
+
+  async getKey(keyHash: string): Promise<KeyRecord | null> {
+    const [value] = await this.send("/pipeline", [["GET", `key:h:${keyHash}`]]);
+    if (typeof value !== "string") return null;
+    const parsed = JSON.parse(value) as Partial<KeyRecord>;
+    if (
+      parsed.keyHash !== keyHash ||
+      typeof parsed.keyId !== "string" ||
+      typeof parsed.email !== "string" ||
+      typeof parsed.createdAt !== "string" ||
+      (parsed.status !== "active" && parsed.status !== "revoked")
+    ) {
+      throw new Error("Upstash returned an unexpected key record");
+    }
+    return parsed as KeyRecord;
   }
 }

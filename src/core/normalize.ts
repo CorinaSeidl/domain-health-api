@@ -21,6 +21,36 @@ function invalid(message: string): NormalizeResult {
   return { ok: false, code: "invalid_domain", message };
 }
 
+/**
+ * IN-6: length, label count, label characters and TLD checks on an ASCII name. Returns the
+ * message for the first problem, or null. Also used for the domain part of an email (KEY-2).
+ */
+export function domainSyntaxError(ascii: string): string | null {
+  const labels = ascii.split(".");
+  if (ascii.length > 253) {
+    return "The domain name is longer than 253 characters.";
+  }
+  if (labels.length < 2) {
+    return "Send a full domain like example.com, not a single label.";
+  }
+  for (const label of labels) {
+    if (label.length < 1 || label.length > 63) {
+      return "Each part of the domain name must be 1 to 63 characters long.";
+    }
+    if (!/^[a-z0-9-]+$/.test(label)) {
+      return "The domain name may only contain letters, digits and hyphens.";
+    }
+    if (label.startsWith("-") || label.endsWith("-")) {
+      return "A part of the domain name may not start or end with a hyphen.";
+    }
+  }
+  const tld = labels[labels.length - 1] as string;
+  if (/^[0-9]+$/.test(tld)) {
+    return "The last part of the domain name may not be all digits.";
+  }
+  return null;
+}
+
 /** SPEC.md §2. Steps run in the order IN-1, IN-2, IN-3, IN-4, IN-5, IN-6, IN-7. */
 export function normalizeDomain(
   input: string | null | undefined,
@@ -92,34 +122,9 @@ export function normalizeDomain(
   }
 
   // IN-6
-  const labels = ascii.split(".");
-  if (ascii.length > 253) {
-    return invalid("The domain name is longer than 253 characters.");
-  }
-  if (labels.length < 2) {
-    return invalid("Send a full domain like example.com, not a single label.");
-  }
-  for (const label of labels) {
-    if (label.length < 1 || label.length > 63) {
-      return invalid(
-        "Each part of the domain name must be 1 to 63 characters long.",
-      );
-    }
-    if (!/^[a-z0-9-]+$/.test(label)) {
-      return invalid(
-        "The domain name may only contain letters, digits and hyphens.",
-      );
-    }
-    if (label.startsWith("-") || label.endsWith("-")) {
-      return invalid(
-        "A part of the domain name may not start or end with a hyphen.",
-      );
-    }
-  }
-  const tld = labels[labels.length - 1] as string;
-  if (/^[0-9]+$/.test(tld)) {
-    return invalid("The last part of the domain name may not be all digits.");
-  }
+  const syntaxError = domainSyntaxError(ascii);
+  if (syntaxError !== null) return invalid(syntaxError);
+  const tld = ascii.slice(ascii.lastIndexOf(".") + 1);
 
   // IN-7
   if (SPECIAL_USE_TLDS.has(tld) || ascii.endsWith(".home.arpa")) {

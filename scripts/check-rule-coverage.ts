@@ -2,17 +2,16 @@ import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 
-/** Acceptance #2 (SPEC.md §12): every rule ID except the §11 KEY-* rules must be tested. */
+/** Acceptance #2 (SPEC.md §12): every rule ID in SPEC.md must be tested. */
 
 const ROOT = fileURLToPath(new URL("..", import.meta.url));
 const RULE_ROW = /^\|\s*\*\*([A-Z]+-\d+)\*\*\s*\|/gm;
-const EXCLUDED = /^KEY-/;
 const TODO_CALL = /\b(?:scenario|it|test)(?:\.[a-zA-Z]+)*\.todo\s*\(/g;
 
-/** Rule IDs defined in SPEC.md tables (bold first cell), minus the §11 KEY-* rules. */
+/** Rule IDs defined in SPEC.md tables (bold first cell). */
 export function extractRuleIds(spec: string): string[] {
   const ids = [...spec.matchAll(RULE_ROW)].map((m) => m[1]!);
-  return [...new Set(ids)].filter((id) => !EXCLUDED.test(id));
+  return [...new Set(ids)];
 }
 
 /** Index just past the `)` that closes the call whose `(` is at `open`; string-aware. */
@@ -119,9 +118,7 @@ export function main(root: string = ROOT): number {
     for (const id of uncovered) console.error(`  ${id}`);
     return 1;
   }
-  console.log(
-    `Rule coverage OK: all ${total} rule IDs are tested (KEY-* excluded).`,
-  );
+  console.log(`Rule coverage OK: all ${total} rule IDs are tested.`);
   return 0;
 }
 

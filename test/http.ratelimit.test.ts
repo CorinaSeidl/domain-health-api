@@ -1,5 +1,5 @@
 import { describe, expect } from "vitest";
-import type { KeyUsage, Store } from "../src/http/store/types.js";
+import type { KeyRecord, KeyUsage, Store } from "../src/http/store/types.js";
 import { K1, K2, makeApp, scenario, START } from "./harness/http.js";
 
 const midnightAfter = (ms: number) => {
@@ -23,6 +23,12 @@ class ThrowingStore implements Store {
     return this.fail();
   }
   listUsage(): Promise<KeyUsage[]> {
+    return this.fail();
+  }
+  createKey(): Promise<boolean> {
+    return this.fail();
+  }
+  getKey(): Promise<KeyRecord | null> {
     return this.fail();
   }
 }

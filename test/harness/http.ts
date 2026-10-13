@@ -46,6 +46,7 @@ export interface AppOptions {
   store?: Store;
   resolver?: HandlerConfig["resolver"];
   start?: number;
+  contactUrl?: string | null;
 }
 
 /** Handler under test plus a controllable clock and captured log lines. */
@@ -62,6 +63,7 @@ export function makeApp(options: AppOptions = {}) {
     store: options.store ?? store,
     log: (line) => logs.push(line),
     version: VERSION,
+    contactUrl: options.contactUrl ?? null,
     now,
   });
 
@@ -75,6 +77,7 @@ export function makeApp(options: AppOptions = {}) {
       method?: string;
       headers?: Record<string, string>;
       key?: string | null;
+      body?: string;
     } = {},
   ): Promise<Response> {
     const headers = new Headers(init.headers);
@@ -88,15 +91,22 @@ export function makeApp(options: AppOptions = {}) {
     }
     const method = init.method ?? "GET";
     const res = await handle(
-      new Request(`https://api.test${path}`, { method, headers }),
+      new Request(`https://api.test${path}`, {
+        method,
+        headers,
+        ...(init.body === undefined ? {} : { body: init.body }),
+      }),
     );
-    if (method !== "HEAD") {
+    const isHtml = res.headers.get("content-type")?.startsWith("text/html");
+    if (method !== "HEAD" && !isHtml) {
       const body: unknown = await res.clone().json();
       const route = path.split("?")[0] ?? path;
-      const validate =
-        res.status === 200
-          ? cached(route, () => responseValidator(route, "get", 200))
-          : cached("Error", () => schemaValidator("Error"));
+      const success = res.status === 200 || res.status === 201;
+      const validate = success
+        ? cached(`${method} ${route} ${res.status}`, () =>
+            responseValidator(route, method.toLowerCase(), res.status),
+          )
+        : cached("Error", () => schemaValidator("Error"));
       expect(
         validate(body),
         `openapi: ${method} ${path} -> ${res.status}`,
@@ -107,6 +117,15 @@ export function makeApp(options: AppOptions = {}) {
 
   return {
     request,
+    handle,
+    /** KEY-1: POST /v1/keys with a JSON email body. No API key is sent. */
+    signup: (email: unknown, init: { headers?: Record<string, string> } = {}) =>
+      request("/v1/keys", {
+        method: "POST",
+        key: null,
+        body: JSON.stringify({ email }),
+        ...init,
+      }),
     check: (domain: string, init?: Parameters<typeof request>[1]) =>
       request(`/v1/domain/check?domain=${encodeURIComponent(domain)}`, init),
     resolver,

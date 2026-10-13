@@ -41,6 +41,17 @@ export function fakeUpstash(now: () => number = Date.now) {
       }
       case "GET":
         return alive(key) ? (strings.get(key) ?? null) : null;
+      case "SET": {
+        alive(key);
+        if (rest[1] === "NX" && strings.has(key)) return null;
+        strings.set(key, String(rest[0]));
+        return "OK";
+      }
+      case "DEL": {
+        const had = strings.delete(key) || sets.delete(key);
+        expiry.delete(key);
+        return had ? 1 : 0;
+      }
       case "EXPIREAT":
         if (!strings.has(key) && !sets.has(key)) return 0;
         expiry.set(key, Number(rest[0]));

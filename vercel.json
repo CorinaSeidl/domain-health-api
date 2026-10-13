@@ -3,6 +3,8 @@
   "rewrites": [
     { "source": "/v1/domain/check", "destination": "/api/v1/domain/check" },
     { "source": "/v1/health", "destination": "/api/v1/health" },
+    { "source": "/v1/keys", "destination": "/api/v1/keys" },
+    { "source": "/", "destination": "/api/index" },
     { "source": "/((?!api/).*)", "destination": "/api/not-found" }
   ]
 }

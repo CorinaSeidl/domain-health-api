@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type { Store } from "./store/types.js";
 
 export function hashKey(key: string): string {
   return createHash("sha256").update(key).digest("hex");
@@ -47,4 +48,25 @@ export function authenticate(
 ): { keyId: string } | null {
   const hash = hashKey(presented);
   return validHashes.has(hash) ? { keyId: keyIdOf(hash) } : null;
+}
+
+/** AUTH-2: only this shape can be a key, so anything else never costs a store lookup. */
+const KEY_FORMAT = /^dh_[0-9A-Za-z]{32}$/;
+
+/**
+ * AUTH-3, AUTH-6, KEY-5: a key is valid if its hash is in API_KEY_HASHES or belongs to an active
+ * self-serve key in the store. Configured hashes are checked first, so they never depend on the
+ * store. A store failure throws (the handler answers 500 internal_error), because treating an
+ * unreachable store as "invalid key" would reject people who hold valid keys.
+ */
+export async function authenticateWithStore(
+  presented: string,
+  validHashes: ReadonlySet<string>,
+  store: Store,
+): Promise<{ keyId: string } | null> {
+  const configured = authenticate(presented, validHashes);
+  if (configured || !KEY_FORMAT.test(presented)) return configured;
+  const hash = hashKey(presented);
+  const record = await store.getKey(hash);
+  return record?.status === "active" ? { keyId: keyIdOf(hash) } : null;
 }

@@ -2,7 +2,15 @@ import { randomBytes } from "node:crypto";
 import { checkDomain } from "../core/check.js";
 import type { RawResolver } from "../core/dns.js";
 import { normalizeDomain } from "../core/normalize.js";
-import { authenticate, extractKey, hasKeyInQuery } from "./auth.js";
+import { authenticateWithStore, extractKey, hasKeyInQuery } from "./auth.js";
+import {
+  chargeSignupThrottle,
+  clientIp,
+  createSelfServeKey,
+  keyIssuedBody,
+  validateEmail,
+} from "./keys.js";
+import { CONTENT_SECURITY_POLICY, renderLanding } from "./landing.js";
 import {
   chargeRateLimit,
   type DailyWindow,
@@ -24,6 +32,8 @@ export interface HandlerConfig {
   store: Store;
   log: LogSink;
   version: string;
+  /** LP-3: where the landing page sends someone whose email already has a key (CONTACT_URL). */
+  contactUrl?: string | null;
   /** Injectable clock for rate-limit windows, timestamps and usage days. */
   now?: () => Date;
 }
@@ -37,10 +47,15 @@ type ErrorCode =
   | "method_not_allowed"
   | "not_found"
   | "rate_limited"
+  | "invalid_email"
+  | "key_exists"
   | "internal_error";
 
 const CHECK_PATH = "/v1/domain/check";
 const HEALTH_PATH = "/v1/health";
+const KEYS_PATH = "/v1/keys";
+const LANDING_PATH = "/";
+const MAX_BODY_CHARS = 4096;
 const REQUEST_ID_PATTERN = /^[A-Za-z0-9-]{1,64}$/;
 
 /** HTTP-6: a client-supplied id is used only if it matches, otherwise 16 random bytes as hex. */
@@ -109,6 +124,96 @@ export function createHandler(
 ): (request: Request) => Promise<Response> {
   const now = config.now ?? (() => new Date());
 
+  /** LP-1..LP-5. HTML, no auth. The CSP allows only the page's own inline style and script. */
+  function landing(state: RequestState, url: URL): Response {
+    const html = renderLanding({
+      origin: url.origin,
+      limits: config.limits,
+      contactUrl: config.contactUrl ?? null,
+    });
+    return new Response(state.head ? null : html, {
+      status: 200,
+      headers: {
+        "Content-Type": "text/html; charset=utf-8",
+        "Cache-Control": "no-store", // HTTP-7
+        "X-Request-Id": state.requestId, // HTTP-6
+        "Content-Security-Policy": CONTENT_SECURITY_POLICY,
+        "X-Content-Type-Options": "nosniff",
+        "Referrer-Policy": "no-referrer",
+      },
+    });
+  }
+
+  /** KEY-1..KEY-5. Order: method, signup throttle, body and email, then issue. */
+  async function createKey(
+    request: Request,
+    state: RequestState,
+  ): Promise<Response> {
+    if (request.method !== "POST") {
+      return fail(
+        state,
+        405,
+        "method_not_allowed",
+        "Use POST for this endpoint.",
+        { Allow: "POST" },
+      );
+    }
+
+    // KEY-4: every attempt is charged, so a 409 cannot be used to probe for registered emails.
+    const throttle = await chargeSignupThrottle(
+      config.store,
+      clientIp(request.headers),
+      now(),
+    );
+    if (throttle.storeUnavailable) {
+      logEvent(config.log, now(), "store_unavailable", state.requestId);
+    }
+    if (!throttle.allowed) {
+      return fail(
+        state,
+        429,
+        "rate_limited",
+        `Too many key requests from this network. Retry after ${throttle.retryAfterSec} seconds.`,
+        { "Retry-After": String(throttle.retryAfterSec) },
+      );
+    }
+
+    // KEY-2
+    let email: unknown;
+    const text = await request.text();
+    if (text.length <= MAX_BODY_CHARS) {
+      try {
+        email = (JSON.parse(text) as { email?: unknown } | null)?.email;
+      } catch {
+        email = undefined;
+      }
+    }
+    const checked = validateEmail(email);
+    if (!checked.ok) {
+      return fail(state, 400, "invalid_email", checked.message);
+    }
+
+    const created = await createSelfServeKey(
+      config.store,
+      checked.email,
+      now(),
+    );
+    if (created === null) {
+      // KEY-3
+      return fail(
+        state,
+        409,
+        "key_exists",
+        "A key already exists for that email address.",
+      );
+    }
+    return respond(
+      state,
+      201,
+      keyIssuedBody(created, config.limits, state.requestId),
+    );
+  }
+
   async function dispatch(
     request: Request,
     state: RequestState,
@@ -129,6 +234,21 @@ export function createHandler(
       // HTTP-2: unauthenticated, no DNS.
       return respond(state, 200, { status: "ok", version: config.version });
     }
+
+    if (url.pathname === LANDING_PATH) {
+      if (!isRead) {
+        return fail(
+          state,
+          405,
+          "method_not_allowed",
+          "Use GET for this page.",
+          { Allow: "GET" },
+        );
+      }
+      return landing(state, url); // LP-1
+    }
+
+    if (url.pathname === KEYS_PATH) return createKey(request, state);
 
     if (url.pathname !== CHECK_PATH) {
       return fail(state, 404, "not_found", "No such endpoint."); // HTTP-3
@@ -164,7 +284,11 @@ export function createHandler(
         { "WWW-Authenticate": "Bearer" },
       );
     }
-    const auth = authenticate(presented, config.keyHashes);
+    const auth = await authenticateWithStore(
+      presented,
+      config.keyHashes,
+      config.store,
+    );
     if (auth === null) {
       return fail(state, 401, "invalid_api_key", "The API key is not valid.", {
         "WWW-Authenticate": "Bearer",
