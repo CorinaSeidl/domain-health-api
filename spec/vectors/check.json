@@ -1,0 +1,93 @@
+{
+  "description": "Full check orchestration and response assembly (SPEC.md §3, §7, §1.3). Run against the complete check function (not the HTTP layer). expect.summary is compared exactly; expect.issue_codes is the exact ordered list of TOP-LEVEL issue codes; expect.check_status maps check name → status.",
+  "vectors": [
+    {
+      "id": "C-V01", "rules": ["RES-4", "RES-2", "SCOPE-1", "RES-1"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:_spf.example.net -all"]], "MX": [{ "priority": 10, "exchange": "mx.example.net" }] },
+        "_spf.example.net": { "TXT": [["v=spf1 ip4:192.0.2.0/24 -all"]] },
+        "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; rua=mailto:d@example.com"]] },
+        "mx.example.net": { "A": ["192.0.2.25"] } } },
+      "expect": {
+        "domain_exists": true,
+        "summary": { "status": "pass", "errors": 0, "warnings": 0, "info": 0 },
+        "check_status": { "spf": "valid", "dmarc": "valid", "mx": "valid" },
+        "issue_codes": [],
+        "limitations_min_length": 2
+      }
+    },
+    {
+      "id": "C-V02", "rules": ["RES-4", "RES-2"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 ip4:192.0.2.1 ?all"]], "MX": [{ "priority": 10, "exchange": "mx.example.com" }] },
+        "_dmarc.example.com": { "TXT": [["v=DMARC1; p=none"]] },
+        "mx.example.com": { "A": ["192.0.2.25"] } } },
+      "expect": {
+        "summary": { "status": "warn", "errors": 0, "warnings": 1, "info": 2 },
+        "issue_codes": ["SPF_NEUTRAL_ALL", "DMARC_POLICY_NONE", "DMARC_NO_RUA"]
+      }
+    },
+    {
+      "id": "C-V03", "rules": ["RES-4", "RES-2"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 +all"]], "MX": [{ "priority": 10, "exchange": "mx.example.com" }] },
+        "mx.example.com": {} } },
+      "expect": {
+        "summary": { "status": "fail", "errors": 2, "warnings": 1, "info": 0 },
+        "check_status": { "spf": "invalid", "dmarc": "missing", "mx": "invalid" },
+        "issue_codes": ["SPF_ALLOW_ALL", "DMARC_MISSING", "MX_TARGET_UNRESOLVABLE"]
+      }
+    },
+    {
+      "id": "C-V04", "rules": ["RES-4", "DNS-8"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": "ERROR", "MX": [{ "priority": 10, "exchange": "mx.example.com" }] },
+        "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; rua=mailto:d@example.com"]] },
+        "mx.example.com": { "A": ["192.0.2.25"] } } },
+      "note": "A failed lookup with no errors elsewhere → incomplete, never 'pass'.",
+      "expect": {
+        "summary": { "status": "incomplete", "errors": 0, "warnings": 1, "info": 0 },
+        "check_status": { "spf": "error", "dmarc": "valid", "mx": "valid" },
+        "issue_codes": ["DNS_LOOKUP_FAILED"]
+      }
+    },
+    {
+      "id": "C-V05", "rules": ["DNS-7", "RES-4"],
+      "input": { "domain": "doesnotexist.example.com", "dns": {} },
+      "expect": {
+        "domain_exists": false,
+        "summary": { "status": "fail", "errors": 1, "warnings": 0, "info": 0 },
+        "check_status": { "spf": "not_evaluated", "dmarc": "not_evaluated", "mx": "not_evaluated" },
+        "issue_codes": ["DOMAIN_NOT_FOUND"]
+      }
+    },
+    {
+      "id": "C-V06", "rules": ["DNS-7"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "A": ["192.0.2.80"] } } },
+      "note": "Name exists (no TXT, no MX records, but not NXDOMAIN) → domain_exists true; checks report missing.",
+      "expect": {
+        "domain_exists": true,
+        "check_status": { "spf": "missing", "dmarc": "missing", "mx": "missing" },
+        "issue_codes": ["SPF_MISSING", "DMARC_MISSING", "MX_MISSING"]
+      }
+    },
+    {
+      "id": "C-V07", "rules": ["DNS-4"],
+      "input": { "domain": "example.com", "dns": "GENERATE:spf_wide_fanout_50_includes",
+        "note": "Harness generates example.com with an SPF record of 50 include: terms, each target having its own valid SPF record, plus DMARC and MX." },
+      "expect": {
+        "max_dns_queries": 40,
+        "check_status": { "spf": "invalid" },
+        "spf_issue_codes_include": ["SPF_TOO_MANY_LOOKUPS"]
+      }
+    },
+    {
+      "id": "C-V08", "rules": ["RES-7"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 -all"]], "MX": [{ "priority": 10, "exchange": "b.example.com" }, { "priority": 10, "exchange": "a.example.com" }] },
+        "a.example.com": { "A": ["192.0.2.1"] }, "b.example.com": { "A": ["192.0.2.2"] } } },
+      "note": "Harness runs the check twice, with the fake resolver returning records in shuffled order on the second run; outputs must be identical except checked_at and request_id.",
+      "expect": { "deterministic": true }
+    }
+  ]
+}

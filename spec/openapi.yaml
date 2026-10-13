@@ -1,0 +1,328 @@
+openapi: 3.1.0
+info:
+  title: Domain Health API
+  version: 0.1.0
+  summary: Structured SPF, DMARC and MX diagnostics for a domain.
+  description: |
+    Inspects public DNS for a single domain and returns structured diagnostics.
+    Not a deliverability test. DKIM is not checked in v1 (requires a selector).
+    Behavior rules live in SPEC.md; rule IDs are referenced in descriptions below.
+servers:
+  - url: https://REPLACE_WITH_DEPLOYED_HOST
+    description: Production (host decided in DECISIONS.md D-3)
+
+security:
+  - bearerAuth: []
+  - apiKeyHeader: []
+
+paths:
+  /v1/domain/check:
+    get:
+      operationId: checkDomain
+      summary: Check a domain's SPF, DMARC and MX configuration
+      description: |
+        Returns 200 whenever the check completes, regardless of the domain's health (HTTP-9).
+        See SPEC.md §2 (input), §3–6 (checks), §7 (response assembly).
+      parameters:
+        - name: domain
+          in: query
+          required: true
+          description: Bare domain name, e.g. `example.com`. Not a URL. IDNs accepted (IN-1..IN-8).
+          schema:
+            type: string
+            maxLength: 300
+          example: example.com
+      responses:
+        '200':
+          description: Check completed.
+          headers:
+            X-Request-Id: { $ref: '#/components/headers/X-Request-Id' }
+            X-RateLimit-Limit: { $ref: '#/components/headers/X-RateLimit-Limit' }
+            X-RateLimit-Remaining: { $ref: '#/components/headers/X-RateLimit-Remaining' }
+            X-RateLimit-Reset: { $ref: '#/components/headers/X-RateLimit-Reset' }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DomainCheckResult' }
+              example:
+                request_id: 3f9c2a7d1e4b8f60a2c5d7e9f1b3a5c7
+                domain: example.com
+                domain_exists: true
+                checked_at: '2026-10-13T08:00:00Z'
+                summary: { status: pass, errors: 0, warnings: 0, info: 2 }
+                spf:
+                  status: valid
+                  record: 'v=spf1 -all'
+                  records: ['v=spf1 -all']
+                  all_qualifier: '-'
+                  lookup_count: 0
+                  lookup_count_exact: true
+                  issues: []
+                dmarc:
+                  status: valid
+                  record: 'v=DMARC1;p=reject;sp=reject;adkim=s;aspf=s'
+                  records: ['v=DMARC1;p=reject;sp=reject;adkim=s;aspf=s']
+                  policy: reject
+                  subdomain_policy: reject
+                  pct: 100
+                  adkim: s
+                  aspf: s
+                  rua: []
+                  ruf: []
+                  issues:
+                    - code: DMARC_NO_RUA
+                      severity: info
+                      check: dmarc
+                      message: No rua tag, so no DMARC aggregate reports are being collected for this domain.
+                mx:
+                  status: null_mx
+                  records: [{ priority: 0, exchange: '', resolves: null }]
+                  issues:
+                    - code: MX_NULL
+                      severity: info
+                      check: mx
+                      message: This domain publishes a null MX record, explicitly declaring that it accepts no email.
+                issues:
+                  - code: DMARC_NO_RUA
+                    severity: info
+                    check: dmarc
+                    message: No rua tag, so no DMARC aggregate reports are being collected for this domain.
+                  - code: MX_NULL
+                    severity: info
+                    check: mx
+                    message: This domain publishes a null MX record, explicitly declaring that it accepts no email.
+                limitations:
+                  - DKIM was not checked; it requires a selector.
+                  - This is a DNS configuration check, not an email deliverability test.
+                  - DMARC policy inheritance from a parent domain is not evaluated.
+        '400':
+          description: Invalid request (missing_domain, invalid_domain, key_in_query).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+              example:
+                error: { code: invalid_domain, message: 'Send a bare domain like example.com, not a URL.' }
+                request_id: 3f9c2a7d1e4b8f60a2c5d7e9f1b3a5c7
+        '401':
+          description: Missing or invalid API key (AUTH-5).
+          headers:
+            WWW-Authenticate: { schema: { type: string, const: Bearer } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405':
+          description: Method not allowed (HTTP-1).
+          headers:
+            Allow: { schema: { type: string, const: GET } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Rate limit exceeded (RL-2).
+          headers:
+            Retry-After: { schema: { type: integer, minimum: 1 } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Internal error (HTTP-8).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
+  /v1/health:
+    get:
+      operationId: health
+      summary: Liveness check (no auth, no DNS)
+      security: []
+      responses:
+        '200':
+          description: Service is up.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [status, version]
+                additionalProperties: false
+                properties:
+                  status: { type: string, const: ok }
+                  version: { type: string, example: 0.1.0 }
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: 'Authorization: Bearer dh_... (AUTH-1, AUTH-2)'
+    apiKeyHeader:
+      type: apiKey
+      in: header
+      name: X-API-Key
+
+  headers:
+    X-Request-Id:
+      description: Request identifier (HTTP-6).
+      schema: { type: string, pattern: '^[A-Za-z0-9-]{1,64}$' }
+    X-RateLimit-Limit:
+      description: Daily request limit for this key (RL-3).
+      schema: { type: integer }
+    X-RateLimit-Remaining:
+      description: Requests remaining in the current UTC day.
+      schema: { type: integer, minimum: 0 }
+    X-RateLimit-Reset:
+      description: Unix seconds when the daily window resets.
+      schema: { type: integer }
+
+  schemas:
+    Error:
+      type: object
+      required: [error, request_id]
+      additionalProperties: false
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          additionalProperties: false
+          properties:
+            code:
+              type: string
+              enum:
+                - missing_domain
+                - invalid_domain
+                - key_in_query
+                - missing_api_key
+                - invalid_api_key
+                - method_not_allowed
+                - not_found
+                - rate_limited
+                - internal_error
+            message: { type: string }
+        request_id: { type: string }
+
+    Severity:
+      type: string
+      enum: [error, warning, info]
+
+    Issue:
+      type: object
+      required: [code, severity, check, message]
+      additionalProperties: false
+      properties:
+        code:
+          type: string
+          description: Closed list — SPEC.md §9.
+          enum:
+            - DOMAIN_NOT_FOUND
+            - DNS_LOOKUP_FAILED
+            - SPF_MISSING
+            - SPF_MULTIPLE_RECORDS
+            - SPF_SYNTAX_ERROR
+            - SPF_ALLOW_ALL
+            - SPF_NEUTRAL_ALL
+            - SPF_NO_ALL
+            - SPF_PTR_USED
+            - SPF_REDIRECT_IGNORED
+            - SPF_TOO_MANY_LOOKUPS
+            - SPF_INCLUDE_NO_RECORD
+            - SPF_INCLUDE_LOOP
+            - SPF_MACRO_UNRESOLVED
+            - SPF_INCLUDE_INVALID
+            - DMARC_MISSING
+            - DMARC_MULTIPLE_RECORDS
+            - DMARC_SYNTAX_ERROR
+            - DMARC_INVALID_POLICY
+            - DMARC_POLICY_NONE
+            - DMARC_PARTIAL_PCT
+            - DMARC_NO_RUA
+            - MX_MISSING
+            - MX_NULL
+            - MX_NULL_MIXED
+            - MX_TARGET_IS_IP
+            - MX_TARGET_UNRESOLVABLE
+        severity: { $ref: '#/components/schemas/Severity' }
+        check: { type: string, enum: [domain, spf, dmarc, mx] }
+        message: { type: string, minLength: 1 }
+
+    CheckStatus:
+      type: string
+      enum: [valid, invalid, missing, error, not_evaluated]
+
+    SpfResult:
+      type: object
+      required: [status, record, records, all_qualifier, lookup_count, lookup_count_exact, issues]
+      additionalProperties: false
+      properties:
+        status: { $ref: '#/components/schemas/CheckStatus' }
+        record: { type: [string, 'null'] }
+        records: { type: array, items: { type: string } }
+        all_qualifier: { type: [string, 'null'], enum: ['+', '-', '~', '?', null] }
+        lookup_count: { type: [integer, 'null'], minimum: 0 }
+        lookup_count_exact: { type: [boolean, 'null'] }
+        issues: { type: array, items: { $ref: '#/components/schemas/Issue' } }
+
+    DmarcResult:
+      type: object
+      required: [status, record, records, policy, subdomain_policy, pct, adkim, aspf, rua, ruf, issues]
+      additionalProperties: false
+      properties:
+        status: { $ref: '#/components/schemas/CheckStatus' }
+        record: { type: [string, 'null'] }
+        records: { type: array, items: { type: string } }
+        policy: { type: [string, 'null'], enum: [none, quarantine, reject, null] }
+        subdomain_policy: { type: [string, 'null'], enum: [none, quarantine, reject, null] }
+        pct: { type: [integer, 'null'], minimum: 0, maximum: 100 }
+        adkim: { type: [string, 'null'], enum: [r, s, null] }
+        aspf: { type: [string, 'null'], enum: [r, s, null] }
+        rua: { type: array, items: { type: string } }
+        ruf: { type: array, items: { type: string } }
+        issues: { type: array, items: { $ref: '#/components/schemas/Issue' } }
+
+    MxRecord:
+      type: object
+      required: [priority, exchange, resolves]
+      additionalProperties: false
+      properties:
+        priority: { type: integer, minimum: 0, maximum: 65535 }
+        exchange: { type: string }
+        resolves: { type: [boolean, 'null'] }
+
+    MxResult:
+      type: object
+      required: [status, records, issues]
+      additionalProperties: false
+      properties:
+        status:
+          type: string
+          enum: [valid, invalid, missing, null_mx, error, not_evaluated]
+        records: { type: array, items: { $ref: '#/components/schemas/MxRecord' } }
+        issues: { type: array, items: { $ref: '#/components/schemas/Issue' } }
+
+    DomainCheckResult:
+      type: object
+      required: [request_id, domain, domain_exists, checked_at, summary, spf, dmarc, mx, issues, limitations]
+      additionalProperties: false
+      properties:
+        request_id: { type: string }
+        domain: { type: string, description: Normalized ASCII domain (IN-2, IN-4). }
+        domain_exists: { type: boolean, description: DNS-7. }
+        checked_at: { type: string, format: date-time }
+        summary:
+          type: object
+          required: [status, errors, warnings, info]
+          additionalProperties: false
+          properties:
+            status: { type: string, enum: [pass, warn, fail, incomplete], description: RES-4. }
+            errors: { type: integer, minimum: 0 }
+            warnings: { type: integer, minimum: 0 }
+            info: { type: integer, minimum: 0 }
+        spf: { $ref: '#/components/schemas/SpfResult' }
+        dmarc: { $ref: '#/components/schemas/DmarcResult' }
+        mx: { $ref: '#/components/schemas/MxResult' }
+        issues:
+          type: array
+          description: All issues, ordered domain → spf → dmarc → mx (RES-2).
+          items: { $ref: '#/components/schemas/Issue' }
+        limitations:
+          type: array
+          minItems: 2
+          items: { type: string }
+          description: SCOPE-1.

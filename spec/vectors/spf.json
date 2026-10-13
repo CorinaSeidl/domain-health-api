@@ -1,0 +1,221 @@
+{
+  "description": "SPF check (SPEC.md §4). input.domain is the already-normalized domain; input.dns is the fake zone (see README.md). expect asserts fields of the `spf` result object.",
+  "vectors": [
+    {
+      "id": "SPF-V01", "rules": ["SPF-1", "SPF-11", "SPF-14", "SPF-23"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.0/24 -all"]] } } },
+      "expect": { "status": "valid", "record": "v=spf1 ip4:192.0.2.0/24 -all", "all_qualifier": "-", "lookup_count": 0, "lookup_count_exact": true, "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V02", "rules": ["SPF-1"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["google-site-verification=abc"], ["V=SPF1 ~all"], ["v=spf10 -all"]] } } },
+      "expect": { "status": "valid", "record": "V=SPF1 ~all", "all_qualifier": "~", "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V03", "rules": ["SPF-1", "DNS-5"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.1 ", "ip4:192.0.2.2 -all"]] } } },
+      "expect": { "status": "valid", "record": "v=spf1 ip4:192.0.2.1 ip4:192.0.2.2 -all", "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V04", "rules": ["SPF-2"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["some-other-record"]] } } },
+      "expect": { "status": "missing", "record": null, "records": [], "all_qualifier": null, "lookup_count": null, "lookup_count_exact": null, "issue_codes": ["SPF_MISSING"], "issue_severities": ["warning"] }
+    },
+    {
+      "id": "SPF-V05", "rules": ["SPF-2"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "MX": [{ "priority": 10, "exchange": "mx.example.com" }] } } },
+      "expect": { "status": "missing", "issue_codes": ["SPF_MISSING"] }
+    },
+    {
+      "id": "SPF-V06", "rules": ["SPF-3", "RES-6"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 -all"], ["v=spf1 include:example.net -all"]] } } },
+      "expect": { "status": "invalid", "record": null, "records": ["v=spf1 -all", "v=spf1 include:example.net -all"], "issue_codes": ["SPF_MULTIPLE_RECORDS"], "issue_severities": ["error"] }
+    },
+    {
+      "id": "SPF-V07", "rules": ["SPF-4"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.1 foo -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_SYNTAX_ERROR"], "message_contains": ["foo"] }
+    },
+    {
+      "id": "SPF-V08", "rules": ["SPF-4"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.1 custom=whatever -all"]] } } },
+      "expect": { "status": "valid", "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V09", "rules": ["SPF-5"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.300 -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_SYNTAX_ERROR"] }
+    },
+    {
+      "id": "SPF-V10", "rules": ["SPF-5"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.0/33 -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_SYNTAX_ERROR"] }
+    },
+    {
+      "id": "SPF-V11", "rules": ["SPF-5"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip6:2001:db8::/32 ip6:2001:db8::1 -all"]] } } },
+      "expect": { "status": "valid", "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V12", "rules": ["SPF-5"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip6:2001:db8::/129 -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_SYNTAX_ERROR"] }
+    },
+    {
+      "id": "SPF-V13", "rules": ["SPF-6"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 include: -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_SYNTAX_ERROR"] }
+    },
+    {
+      "id": "SPF-V14", "rules": ["SPF-7"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 redirect=example.net redirect=example.org"]] },
+        "example.net": { "TXT": [["v=spf1 -all"]] },
+        "example.org": { "TXT": [["v=spf1 -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_SYNTAX_ERROR"] }
+    },
+    {
+      "id": "SPF-V15", "rules": ["SPF-8"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 +all"]] } } },
+      "expect": { "status": "invalid", "all_qualifier": "+", "issue_codes": ["SPF_ALLOW_ALL"], "issue_severities": ["error"] }
+    },
+    {
+      "id": "SPF-V16", "rules": ["SPF-8"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 all"]] } } },
+      "expect": { "status": "invalid", "all_qualifier": "+", "issue_codes": ["SPF_ALLOW_ALL"] }
+    },
+    {
+      "id": "SPF-V17", "rules": ["SPF-9", "SPF-23"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.1 ?all"]] } } },
+      "expect": { "status": "valid", "all_qualifier": "?", "issue_codes": ["SPF_NEUTRAL_ALL"], "issue_severities": ["warning"] }
+    },
+    {
+      "id": "SPF-V18", "rules": ["SPF-10"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ip4:192.0.2.1"]] } } },
+      "expect": { "status": "valid", "all_qualifier": null, "issue_codes": ["SPF_NO_ALL"], "issue_severities": ["warning"] }
+    },
+    {
+      "id": "SPF-V19", "rules": ["SPF-10", "SPF-15"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 redirect=example.net"]] },
+        "example.net": { "TXT": [["v=spf1 ip4:192.0.2.1 -all"]] } } },
+      "expect": { "status": "valid", "all_qualifier": null, "lookup_count": 1, "lookup_count_exact": true, "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V20", "rules": ["SPF-12", "SPF-14"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 ptr -all"]] } } },
+      "expect": { "status": "valid", "lookup_count": 1, "issue_codes": ["SPF_PTR_USED"], "issue_severities": ["warning"] }
+    },
+    {
+      "id": "SPF-V21", "rules": ["SPF-13"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 ip4:192.0.2.1 -all redirect=example.net"]] },
+        "example.net": { "TXT": [["v=spf1 a mx -all"]] } } },
+      "expect": { "status": "valid", "lookup_count": 0, "issue_codes": ["SPF_REDIRECT_IGNORED"], "issue_severities": ["info"] }
+    },
+    {
+      "id": "SPF-V22", "rules": ["SPF-14", "SPF-15"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 a mx include:example.net exists:check.example.org -all"]] },
+        "example.net": { "TXT": [["v=spf1 a mx ip4:192.0.2.0/24 ~all"]] } } },
+      "note": "Top level: a, mx, include, exists = 4. example.net: a, mx = 2. Total 6. ip4 and all do not count.",
+      "expect": { "status": "valid", "lookup_count": 6, "lookup_count_exact": true, "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V23", "rules": ["SPF-14", "SPF-15"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:_spf.example.net include:_spf.example.org -all"]] },
+        "_spf.example.net": { "TXT": [["v=spf1 include:_a.example.net include:_b.example.net ~all"]] },
+        "_a.example.net": { "TXT": [["v=spf1 ip4:192.0.2.0/24 ~all"]] },
+        "_b.example.net": { "TXT": [["v=spf1 ip4:198.51.100.0/24 ~all"]] },
+        "_spf.example.org": { "TXT": [["v=spf1 a ~all"]] } } },
+      "note": "2 (top includes) + 2 (nested includes) + 1 (a in _spf.example.org) = 5.",
+      "expect": { "status": "valid", "lookup_count": 5, "lookup_count_exact": true, "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V24", "rules": ["SPF-16"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:s1.example.net include:s2.example.net include:s3.example.net -all"]] },
+        "s1.example.net": { "TXT": [["v=spf1 a mx ptr exists:x.example.net ~all"]] },
+        "s2.example.net": { "TXT": [["v=spf1 a mx ~all"]] },
+        "s3.example.net": { "TXT": [["v=spf1 a mx ~all"]] } } },
+      "note": "3 + 4 + 2 + 2 = 11 > 10. s1 uses ptr but SPF-12 applies to the top-level record only.",
+      "expect": { "status": "invalid", "lookup_count_exact": false, "issue_codes": ["SPF_TOO_MANY_LOOKUPS"], "issue_severities": ["error"] }
+    },
+    {
+      "id": "SPF-V25", "rules": ["SPF-16"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 a mx a:x.example.com mx:y.example.com include:s1.example.net -all"]] },
+        "s1.example.net": { "TXT": [["v=spf1 a mx a:p.example.net a:q.example.net a:r.example.net ~all"]] } } },
+      "note": "Exactly 10 (5 + 5). At the limit is valid.",
+      "expect": { "status": "valid", "lookup_count": 10, "lookup_count_exact": true, "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V26", "rules": ["SPF-17"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:gone.example.net -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_INCLUDE_NO_RECORD"], "message_contains": ["gone.example.net"] }
+    },
+    {
+      "id": "SPF-V27", "rules": ["SPF-17"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:example.net -all"]] },
+        "example.net": { "TXT": [["not an spf record"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_INCLUDE_NO_RECORD"] }
+    },
+    {
+      "id": "SPF-V28", "rules": ["SPF-18"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:example.net -all"]] },
+        "example.net": { "TXT": [["v=spf1 include:example.com ~all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_INCLUDE_LOOP"] }
+    },
+    {
+      "id": "SPF-V29", "rules": ["SPF-19"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 include:%{d}.spf.example.net -all"]] } } },
+      "expect": { "status": "valid", "lookup_count": 1, "lookup_count_exact": false, "issue_codes": ["SPF_MACRO_UNRESOLVED"], "issue_severities": ["info"] }
+    },
+    {
+      "id": "SPF-V30", "rules": ["SPF-20", "DNS-8"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:flaky.example.net -all"]] },
+        "flaky.example.net": { "TXT": "ERROR" } } },
+      "expect": { "status": "valid", "lookup_count": 1, "lookup_count_exact": false, "issue_codes": ["DNS_LOOKUP_FAILED"], "issue_severities": ["warning"] }
+    },
+    {
+      "id": "SPF-V31", "rules": ["SPF-21"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:example.net -all"]] },
+        "example.net": { "TXT": [["v=spf1 ip4:not-an-ip ~all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_INCLUDE_INVALID"], "message_contains": ["example.net"] }
+    },
+    {
+      "id": "SPF-V32", "rules": ["SPF-22", "SPF-16"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:d1.example.net -all"]] },
+        "d1.example.net": { "TXT": [["v=spf1 include:d2.example.net"]] },
+        "d2.example.net": { "TXT": [["v=spf1 include:d3.example.net"]] },
+        "d3.example.net": { "TXT": [["v=spf1 include:d4.example.net"]] },
+        "d4.example.net": { "TXT": [["v=spf1 include:d5.example.net"]] },
+        "d5.example.net": { "TXT": [["v=spf1 include:d6.example.net"]] },
+        "d6.example.net": { "TXT": [["v=spf1 include:d7.example.net"]] },
+        "d7.example.net": { "TXT": [["v=spf1 include:d8.example.net"]] },
+        "d8.example.net": { "TXT": [["v=spf1 include:d9.example.net"]] },
+        "d9.example.net": { "TXT": [["v=spf1 include:d10.example.net"]] },
+        "d10.example.net": { "TXT": [["v=spf1 include:d11.example.net"]] },
+        "d11.example.net": { "TXT": [["v=spf1 -all"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["SPF_TOO_MANY_LOOKUPS"] }
+    },
+    {
+      "id": "SPF-V33", "rules": ["DNS-8", "SPF-23"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": "ERROR" } } },
+      "expect": { "status": "error", "record": null, "issue_codes": ["DNS_LOOKUP_FAILED"], "issue_severities": ["warning"] }
+    },
+    {
+      "id": "SPF-V34", "rules": ["SPF-4", "SPF-14"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 -ip4:192.0.2.1 ~a:mail.example.com ?mx/24 exp=explain.example.com -all"]] } } },
+      "note": "Qualifiers on non-all mechanisms; mx with CIDR suffix; exp does not count.",
+      "expect": { "status": "valid", "lookup_count": 2, "issue_codes": [] }
+    }
+  ]
+}

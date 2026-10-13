@@ -1,0 +1,108 @@
+{
+  "description": "DMARC check (SPEC.md §5). The record is looked up at _dmarc.<input.domain>. expect asserts fields of the `dmarc` result object.",
+  "vectors": [
+    {
+      "id": "DM-V01", "rules": ["DM-1", "DM-4", "DM-11", "DM-12"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; sp=quarantine; adkim=s; aspf=r; pct=100; rua=mailto:dmarc@example.com"]] } } },
+      "expect": { "status": "valid", "policy": "reject", "subdomain_policy": "quarantine", "pct": 100, "adkim": "s", "aspf": "r", "rua": ["mailto:dmarc@example.com"], "ruf": [], "issue_codes": [] }
+    },
+    {
+      "id": "DM-V02", "rules": ["DM-11", "DM-9"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1;p=quarantine"]] } } },
+      "expect": { "status": "valid", "policy": "quarantine", "subdomain_policy": null, "pct": 100, "adkim": "r", "aspf": "r", "issue_codes": ["DMARC_NO_RUA"], "issue_severities": ["info"] }
+    },
+    {
+      "id": "DM-V03", "rules": ["DM-1"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["some-verification=xyz"], ["v=DMARC1; p=reject; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "valid", "record": "v=DMARC1; p=reject; rua=mailto:a@example.com", "issue_codes": [] }
+    },
+    {
+      "id": "DM-V04", "rules": ["DM-1"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=dmarc1; p=reject"]] } } },
+      "note": "Value DMARC1 is matched exactly; lowercase 'dmarc1' is not a DMARC record.",
+      "expect": { "status": "missing", "issue_codes": ["DMARC_MISSING"] }
+    },
+    {
+      "id": "DM-V05", "rules": ["DM-1", "DNS-5"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; ", "rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "valid", "record": "v=DMARC1; p=reject; rua=mailto:a@example.com", "rua": ["mailto:a@example.com"], "issue_codes": [] }
+    },
+    {
+      "id": "DM-V06", "rules": ["DM-2"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 -all"]] } } },
+      "note": "_dmarc.example.com is NXDOMAIN — this is normal 'missing', not a DNS failure.",
+      "expect": { "status": "missing", "record": null, "records": [], "policy": null, "subdomain_policy": null, "pct": null, "adkim": null, "aspf": null, "rua": [], "ruf": [], "issue_codes": ["DMARC_MISSING"], "issue_severities": ["warning"], "message_contains": ["subdomain"] }
+    },
+    {
+      "id": "DM-V07", "rules": ["DM-3"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject"], ["v=DMARC1; p=none"]] } } },
+      "expect": { "status": "invalid", "record": null, "records": ["v=DMARC1; p=reject", "v=DMARC1; p=none"], "issue_codes": ["DMARC_MULTIPLE_RECORDS"], "issue_severities": ["error"] }
+    },
+    {
+      "id": "DM-V08", "rules": ["DM-4"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; p=none; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["DMARC_SYNTAX_ERROR"] }
+    },
+    {
+      "id": "DM-V09", "rules": ["DM-4"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1;  P=Reject ;;  RUA = mailto:a@example.com ; futuretag=1"]] } } },
+      "note": "Whitespace, empty tags, uppercase names/values and unknown tags are tolerated.",
+      "expect": { "status": "valid", "policy": "reject", "rua": ["mailto:a@example.com"], "issue_codes": [] }
+    },
+    {
+      "id": "DM-V10", "rules": ["DM-5"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "invalid", "policy": null, "issue_codes": ["DMARC_INVALID_POLICY"], "issue_severities": ["error"] }
+    },
+    {
+      "id": "DM-V11", "rules": ["DM-5"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=block; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["DMARC_INVALID_POLICY"] }
+    },
+    {
+      "id": "DM-V12", "rules": ["DM-6"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; sp=hold; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["DMARC_SYNTAX_ERROR"], "message_contains": ["sp"] }
+    },
+    {
+      "id": "DM-V13", "rules": ["DM-6"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; adkim=x; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["DMARC_SYNTAX_ERROR"], "message_contains": ["adkim"] }
+    },
+    {
+      "id": "DM-V14", "rules": ["DM-6"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; pct=150; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["DMARC_SYNTAX_ERROR"], "message_contains": ["pct"] }
+    },
+    {
+      "id": "DM-V15", "rules": ["DM-7", "DM-12"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=none; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "valid", "policy": "none", "issue_codes": ["DMARC_POLICY_NONE"], "issue_severities": ["info"] }
+    },
+    {
+      "id": "DM-V16", "rules": ["DM-8"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=quarantine; pct=25; rua=mailto:a@example.com"]] } } },
+      "expect": { "status": "valid", "pct": 25, "issue_codes": ["DMARC_PARTIAL_PCT"], "message_contains": ["25"] }
+    },
+    {
+      "id": "DM-V17", "rules": ["DM-7", "DM-9"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=none"]] } } },
+      "expect": { "status": "valid", "issue_codes": ["DMARC_POLICY_NONE", "DMARC_NO_RUA"], "issue_severities": ["info", "info"] }
+    },
+    {
+      "id": "DM-V18", "rules": ["DM-10"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; rua=mailto:a@example.com, MAILTO:b@example.net; ruf=mailto:f@example.com"]] } } },
+      "expect": { "status": "valid", "rua": ["mailto:a@example.com", "MAILTO:b@example.net"], "ruf": ["mailto:f@example.com"], "issue_codes": [] }
+    },
+    {
+      "id": "DM-V19", "rules": ["DM-10"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": [["v=DMARC1; p=reject; rua=dmarc@example.com"]] } } },
+      "expect": { "status": "invalid", "issue_codes": ["DMARC_SYNTAX_ERROR"], "message_contains": ["rua"] }
+    },
+    {
+      "id": "DM-V20", "rules": ["DNS-8", "DM-12"],
+      "input": { "domain": "example.com", "dns": { "_dmarc.example.com": { "TXT": "ERROR" } } },
+      "expect": { "status": "error", "issue_codes": ["DNS_LOOKUP_FAILED"], "issue_severities": ["warning"] }
+    }
+  ]
+}

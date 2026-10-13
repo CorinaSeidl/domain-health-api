@@ -1,0 +1,95 @@
+{
+  "description": "MX check (SPEC.md §6). expect asserts fields of the `mx` result object; `records` when listed is compared exactly.",
+  "vectors": [
+    {
+      "id": "MX-V01", "rules": ["MX-1", "MX-6", "MX-8"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "MX": [{ "priority": 20, "exchange": "mx2.example.com." }, { "priority": 10, "exchange": "mx1.example.com" }] },
+        "mx1.example.com": { "A": ["192.0.2.10"] },
+        "mx2.example.com": { "AAAA": ["2001:db8::10"] } } },
+      "expect": { "status": "valid", "records": [
+        { "priority": 10, "exchange": "mx1.example.com", "resolves": true },
+        { "priority": 20, "exchange": "mx2.example.com", "resolves": true } ], "issue_codes": [] }
+    },
+    {
+      "id": "MX-V02", "rules": ["MX-1"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "MX": [{ "priority": 10, "exchange": "b.example.com" }, { "priority": 10, "exchange": "a.example.com" }] },
+        "a.example.com": { "A": ["192.0.2.1"] },
+        "b.example.com": { "A": ["192.0.2.2"] } } },
+      "note": "Equal priority sorts by exchange name (RES-7 determinism).",
+      "expect": { "status": "valid", "records": [
+        { "priority": 10, "exchange": "a.example.com", "resolves": true },
+        { "priority": 10, "exchange": "b.example.com", "resolves": true } ], "issue_codes": [] }
+    },
+    {
+      "id": "MX-V03", "rules": ["MX-2"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 -all"]] } } },
+      "expect": { "status": "missing", "records": [], "issue_codes": ["MX_MISSING"], "issue_severities": ["warning"] }
+    },
+    {
+      "id": "MX-V04", "rules": ["MX-3"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "MX": [{ "priority": 0, "exchange": "." }] } } },
+      "expect": { "status": "null_mx", "records": [{ "priority": 0, "exchange": "", "resolves": null }], "issue_codes": ["MX_NULL"], "issue_severities": ["info"] }
+    },
+    {
+      "id": "MX-V05", "rules": ["MX-3"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "MX": [{ "priority": 0, "exchange": "" }] } } },
+      "expect": { "status": "null_mx", "issue_codes": ["MX_NULL"] }
+    },
+    {
+      "id": "MX-V06", "rules": ["MX-4"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "MX": [{ "priority": 0, "exchange": "." }, { "priority": 10, "exchange": "mx.example.com" }] },
+        "mx.example.com": { "A": ["192.0.2.1"] } } },
+      "expect": { "status": "invalid", "issue_codes": ["MX_NULL_MIXED"], "issue_severities": ["error"] }
+    },
+    {
+      "id": "MX-V07", "rules": ["MX-5"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "MX": [{ "priority": 10, "exchange": "192.0.2.25" }] } } },
+      "expect": { "status": "invalid", "issue_codes": ["MX_TARGET_IS_IP"], "issue_severities": ["error"] }
+    },
+    {
+      "id": "MX-V08", "rules": ["MX-7"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "MX": [{ "priority": 10, "exchange": "good.example.com" }, { "priority": 20, "exchange": "dead.example.com" }] },
+        "good.example.com": { "A": ["192.0.2.1"] } } },
+      "expect": { "status": "valid", "records": [
+        { "priority": 10, "exchange": "good.example.com", "resolves": true },
+        { "priority": 20, "exchange": "dead.example.com", "resolves": false } ],
+        "issue_codes": ["MX_TARGET_UNRESOLVABLE"], "message_contains": ["dead.example.com"] }
+    },
+    {
+      "id": "MX-V09", "rules": ["MX-7"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "MX": [{ "priority": 10, "exchange": "dead.example.com" }] },
+        "dead.example.com": {} } },
+      "expect": { "status": "invalid", "records": [{ "priority": 10, "exchange": "dead.example.com", "resolves": false }], "issue_codes": ["MX_TARGET_UNRESOLVABLE"] }
+    },
+    {
+      "id": "MX-V10", "rules": ["MX-6"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "MX": [{ "priority": 10, "exchange": "flaky.example.com" }] },
+        "flaky.example.com": { "A": "ERROR", "AAAA": "ERROR" } } },
+      "expect": { "status": "valid", "records": [{ "priority": 10, "exchange": "flaky.example.com", "resolves": null }], "issue_codes": [] }
+    },
+    {
+      "id": "MX-V11", "rules": ["MX-6"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "MX": [
+          { "priority": 1, "exchange": "m1.example.com" }, { "priority": 2, "exchange": "m2.example.com" },
+          { "priority": 3, "exchange": "m3.example.com" }, { "priority": 4, "exchange": "m4.example.com" },
+          { "priority": 5, "exchange": "m5.example.com" }, { "priority": 6, "exchange": "m6.example.com" } ] },
+        "m1.example.com": { "A": ["192.0.2.1"] }, "m2.example.com": { "A": ["192.0.2.2"] },
+        "m3.example.com": { "A": ["192.0.2.3"] }, "m4.example.com": { "A": ["192.0.2.4"] },
+        "m5.example.com": { "A": ["192.0.2.5"] } } },
+      "note": "Only the first 5 by priority are resolved; m6 is resolves:null and produces no issue even though it would not resolve.",
+      "expect": { "status": "valid", "issue_codes": [], "records_last": { "priority": 6, "exchange": "m6.example.com", "resolves": null } }
+    },
+    {
+      "id": "MX-V12", "rules": ["DNS-8", "MX-8"],
+      "input": { "domain": "example.com", "dns": { "example.com": { "MX": "ERROR" } } },
+      "expect": { "status": "error", "records": [], "issue_codes": ["DNS_LOOKUP_FAILED"], "issue_severities": ["warning"] }
+    }
+  ]
+}
