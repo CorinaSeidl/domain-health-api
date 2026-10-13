@@ -216,7 +216,7 @@ Contract details are in `openapi.yaml`.
 | **AUTH-4** | `key_id` = the first 12 hex characters of the key's SHA-256. This is the only key identifier that may appear in logs and metrics. |
 | **AUTH-5** | Missing key → `401` `missing_api_key`. Unknown or revoked key → `401` `invalid_api_key`. Both include a `WWW-Authenticate: Bearer` header. |
 | **AUTH-6** | The source of valid key hashes is pluggable (see `DECISIONS.md` D-2). V0 minimum: an env var `API_KEY_HASHES` holding comma-separated SHA-256 hex values, plus a CLI script `scripts/issue-key` that prints a new key once and its hash. |
-| **AUTH-7** | Authentication runs before input validation and before rate limiting is charged. The order is: method → auth → key-in-query check → rate limit → input validation → check. A request rejected for invalid input still counts against the rate limit. |
+| **AUTH-7** | Authentication runs before input validation and before rate limiting is charged. The order is: method → key-in-query check → auth → rate limit → input validation → check. A key-in-query rejection happens before authentication, so it carries no rate-limit headers and is not counted against any limit. A request rejected for invalid input still counts against the rate limit. |
 
 ### 8.4 Rate limiting
 
