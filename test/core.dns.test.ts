@@ -49,11 +49,20 @@ describe("DNS layer (SPEC.md §3)", () => {
       kind: "error",
       reason: "failure",
     });
-    expect(classifyError(new Error("boom"))).toEqual({
+    expect(classifyError({ code: "SOMETHING_NEW" })).toEqual({
       kind: "error",
       reason: "failure",
     });
-    expect(classifyError(null)).toEqual({ kind: "error", reason: "failure" });
+  });
+
+  it("DNS-2 a rejection without a string code is a programming error and propagates", async () => {
+    expect(() => classifyError(new Error("boom"))).toThrow("boom");
+    expect(() => classifyError(null)).toThrow();
+    expect(() => classifyError({ code: 5 })).toThrow();
+    const dns = new DnsClient(
+      stubResolver({ resolveTxt: () => Promise.reject(new TypeError("bug")) }),
+    );
+    await expect(dns.txt("example.com")).rejects.toThrow(TypeError);
   });
 
   it("DNS-2 a successful but empty answer is no_records, a non-empty one is found", async () => {

@@ -41,9 +41,14 @@ export function createNodeResolver(): RawResolver {
   };
 }
 
-/** DNS-2 classification of a rejected lookup. */
+/**
+ * DNS-2 classification of a rejected lookup. Only a rejection carrying a string `code` is a
+ * DNS outcome. One without is a programming error, so it is rethrown and the HTTP layer
+ * answers 500 (HTTP-8) instead of reporting a DNS failure.
+ */
 export function classifyError(err: unknown): DnsOutcome<never> {
   const code = (err as { code?: unknown } | null)?.code;
+  if (typeof code !== "string") throw err;
   if (code === "ENODATA") return { kind: "no_records" };
   if (code === "ENOTFOUND") return { kind: "nxdomain" };
   return { kind: "error", reason: "failure" };

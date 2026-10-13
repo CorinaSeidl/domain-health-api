@@ -67,7 +67,7 @@ Normalization happens in this order. A failure at any step returns `400` with th
 | ID | Rule |
 |---|---|
 | **DNS-1** | All lookups go through one injectable resolver interface (`resolveTxt`, `resolveMx`, `resolve4`, `resolve6`), so tests never touch the network. |
-| **DNS-2** | Each lookup is classified into exactly one outcome: `found` (records returned), `no_records` (name exists, no records of that type, i.e. `ENODATA`), `nxdomain` (name does not exist, i.e. `ENOTFOUND`), or `error` (timeout, `SERVFAIL`, refused, anything else). |
+| **DNS-2** | Each lookup is classified into exactly one outcome: `found` (records returned), `no_records` (name exists, no records of that type, i.e. `ENODATA`), `nxdomain` (name does not exist, i.e. `ENOTFOUND`), or `error` (timeout, `SERVFAIL`, refused, anything else). Only a rejection carrying a string `code` is a DNS outcome. A rejection without one is a programming error: it propagates and becomes 500 internal_error (HTTP-8). |
 | **DNS-3** | Per-query timeout: 3 seconds, at most 1 retry. Total DNS budget per request: 8 seconds. When the budget is exhausted, remaining lookups resolve as `error`. |
 | **DNS-4** | Hard cap of **40 DNS queries per request** across all checks. This bounds cost and prevents abuse through deep SPF include chains. Lookups beyond the cap resolve as `error` with reason `query_cap`. |
 | **DNS-5** | TXT records arrive as arrays of strings. Join the strings of a single record with no separator before parsing (RFC 7208 §3.3). |
@@ -216,7 +216,7 @@ Contract details are in `openapi.yaml`.
 | **AUTH-4** | `key_id` = the first 12 hex characters of the key's SHA-256. This is the only key identifier that may appear in logs and metrics. |
 | **AUTH-5** | Missing key → `401` `missing_api_key`. Unknown or revoked key → `401` `invalid_api_key`. Both include a `WWW-Authenticate: Bearer` header. |
 | **AUTH-6** | The source of valid key hashes is pluggable (see `DECISIONS.md` D-2). V0 minimum: an env var `API_KEY_HASHES` holding comma-separated SHA-256 hex values, plus a CLI script `scripts/issue-key` that prints a new key once and its hash. |
-| **AUTH-7** | Authentication runs before input validation and before rate limiting is charged. The order is: method → auth → key-in-query check → rate limit → input validation → check. A request rejected for invalid input still counts against the rate limit. |
+| **AUTH-7** | Authentication runs before input validation and before rate limiting is charged. The order is: method → key-in-query check → auth → rate limit → input validation → check. A key-in-query rejection happens before authentication, so it carries no rate-limit headers and is not counted against any limit. A request rejected for invalid input still counts against the rate limit. |
 
 ### 8.4 Rate limiting
 
