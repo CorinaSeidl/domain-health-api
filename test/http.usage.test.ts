@@ -1,4 +1,6 @@
 import { describe, expect } from "vitest";
+import { buildUsageReport } from "../scripts/usage-report.js";
+import { MemoryStore } from "../src/http/store/memory.js";
 import { K1, makeApp, scenario, START } from "./harness/http.js";
 
 const DAY = 24 * 60 * 60 * 1000;
@@ -67,8 +69,24 @@ describe("Usage tracking (SPEC.md §8.5)", () => {
     },
   );
 
-  scenario.todo(
+  scenario(
     "H-31",
-    "scripts/usage-report unique and repeat keys (M3: USE-4 is not covered until then)",
+    "usage-report counts unique keys, repeat keys and total successful checks",
+    async () => {
+      const store = new MemoryStore();
+      const day = (n: number) => `2026-10-0${n}`;
+      await store.recordSuccess("K1", day(1));
+      await store.recordSuccess("K1", day(3));
+      await store.recordSuccess("K2", day(2));
+      await store.recordSuccess("K3", day(2));
+      await store.recordSuccess("K3", day(2));
+      expect(await buildUsageReport(store, day(1), day(7))).toEqual({
+        from: day(1),
+        to: day(7),
+        uniqueActiveKeys: 3,
+        totalSuccessfulChecks: 5,
+        repeatKeys: 1,
+      });
+    },
   );
 });

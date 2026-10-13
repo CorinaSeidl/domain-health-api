@@ -1,0 +1,34 @@
+name: Smoke
+
+# Manual only. Needs real public DNS, so it runs on a GitHub runner and never in a
+# Claude Code cloud sandbox (spec/BUILD_BRIEF.md "Environments"). Nothing is deployed.
+on:
+  workflow_dispatch:
+    inputs:
+      own_domain:
+        description: A domain you control (Acceptance #4)
+        required: true
+        type: string
+      base_url:
+        description: Optional deployed API URL to test instead of the in-process handler
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run smoke
+        env:
+          SMOKE_OWN_DOMAIN: ${{ inputs.own_domain }}
+          SMOKE_BASE_URL: ${{ inputs.base_url }}
+          SMOKE_API_KEY: ${{ secrets.SMOKE_API_KEY }}
