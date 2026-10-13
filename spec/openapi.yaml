@@ -147,6 +147,59 @@ paths:
                   status: { type: string, const: ok }
                   version: { type: string, example: 0.1.0 }
 
+  /v1/keys:
+    post:
+      operationId: createKey
+      summary: Get a free API key (self-serve)
+      description: |
+        Unauthenticated. Issues one key per email and returns it exactly once (KEY-1..KEY-5).
+        Every request counts against a per-IP throttle of 5 per hour (KEY-4).
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email: { type: string, maxLength: 254 }
+      responses:
+        '201':
+          description: Key issued. The plaintext key is not retrievable again (KEY-1).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyIssued' }
+        '400':
+          description: Invalid or missing email (KEY-2).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405':
+          description: Only POST is accepted.
+          headers:
+            Allow: { schema: { type: string, const: POST } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '409':
+          description: A key already exists for this email (KEY-3).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Signup throttle exceeded (KEY-4).
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Internal error (HTTP-8).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+
 components:
   securitySchemes:
     bearerAuth:
@@ -173,6 +226,22 @@ components:
       schema: { type: integer }
 
   schemas:
+    KeyIssued:
+      type: object
+      required: [api_key, key_id, limits, request_id]
+      additionalProperties: false
+      properties:
+        api_key: { type: string, pattern: '^dh_[0-9A-Za-z]{32}$' }
+        key_id: { type: string, pattern: '^[0-9a-f]{12}$', description: AUTH-4. }
+        limits:
+          type: object
+          required: [per_minute, per_day]
+          additionalProperties: false
+          properties:
+            per_minute: { type: integer, minimum: 1 }
+            per_day: { type: integer, minimum: 1 }
+        request_id: { type: string }
+
     Error:
       type: object
       required: [error, request_id]
@@ -194,6 +263,8 @@ components:
                 - method_not_allowed
                 - not_found
                 - rate_limited
+                - invalid_email
+                - key_exists
                 - internal_error
             message: { type: string }
         request_id: { type: string }
