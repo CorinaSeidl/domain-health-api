@@ -2,21 +2,23 @@ import { createNodeResolver } from "../core/dns.js";
 import { VERSION } from "../version.js";
 import { configFromEnv } from "./config.js";
 import { createHandler } from "./handler.js";
-import { MemoryStore } from "./store/memory.js";
+import { createStore } from "./store/index.js";
 
 let handler: ((request: Request) => Promise<Response>) | undefined;
 
 /**
  * Wires the framework-agnostic handler for Vercel Functions. This is the only place the
- * production DNS resolver is constructed (DNS-1). The store is in-memory until D-1 is decided,
- * so rate limits are per instance and usage counters are not durable.
+ * production DNS resolver is constructed (DNS-1). The store is Upstash Redis when its
+ * credentials are set (D-1), otherwise in-memory: limits are then per instance and usage
+ * counters are not durable.
  */
 function getHandler(): (request: Request) => Promise<Response> {
+  const log = (line: string) => console.log(line);
   handler ??= createHandler({
     resolver: createNodeResolver(),
     ...configFromEnv(process.env),
-    store: new MemoryStore(),
-    log: (line) => console.log(line),
+    store: createStore(process.env, log),
+    log,
     version: VERSION,
   });
   return handler;

@@ -84,10 +84,18 @@ describe("DNS and response-assembly behavior (SPEC.md §3, §7, §1.3)", () => {
         .sort();
       expect(constructors).toEqual(["src/http/vercel.ts"]);
       const network = /node:(dns|http|https|tls|dgram)|\bfetch\(/;
+      // The only outbound call besides DNS is the Upstash REST store (D-1); it never contacts
+      // a user-supplied domain, so it may use fetch but still no raw sockets or node:dns.
+      const storeFile = "src/http/store/upstash.ts";
       const offenders = files
         .map(rel)
         .filter((f) => f !== "src/core/dns.ts")
-        .filter((f) => network.test(readFileSync(`${root}${f}`, "utf8")));
+        .filter((f) => {
+          const text = readFileSync(`${root}${f}`, "utf8");
+          return f === storeFile
+            ? /node:(dns|http|https|tls|dgram)/.test(text)
+            : network.test(text);
+        });
       expect(offenders).toEqual([]);
     },
   );

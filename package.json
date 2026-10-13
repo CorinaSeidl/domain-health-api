@@ -5,7 +5,7 @@
   "description": "Structured SPF, DMARC and MX diagnostics for a domain.",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": "22.x"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
