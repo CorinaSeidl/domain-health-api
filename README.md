@@ -160,14 +160,20 @@ The API never logs the domain you check, your key, your IP address or your `Auth
 
 ## For operators
 
-Scripts run with `npm run <name> -- <args>`. None of them touch the network except `smoke`.
+Scripts run with `npm run <name> -- <args>`. Only `smoke` (live DNS) and `usage-report` (Upstash) touch the network.
 
 - `issue-key` creates a key and prints it once, with its SHA-256 and `key_id`. Add the hash to the `API_KEY_HASHES` environment variable (comma-separated). Only hashes are ever stored.
-- `usage-report -- --from 2026-10-07 --to 2026-10-13 --usage-file usage.json` prints unique active keys, total successful checks and repeat keys (active on two or more distinct UTC days) for the range. `usage.json` is a dump of the store's usage counters: `[{"keyId":"…","counts":{"2026-10-07":3}}]`. A durable store is not wired yet.
+- `usage-report -- --from 2026-10-07 --to 2026-10-13` prints unique active keys, total successful checks and repeat keys (active on two or more distinct UTC days) for the range. It reads the Upstash store named by the environment variables below. To report from a saved dump instead, add `--usage-file usage.json` (`[{"keyId":"…","counts":{"2026-10-07":3}}]`).
 - `check-rule-coverage` fails if any rule ID in `spec/SPEC.md` (except the proposed `KEY-*` rules) has no test. It runs in CI.
 - `smoke` runs the live check against real domains. It needs real public DNS, so run it from the manual **Smoke** GitHub Actions workflow or a local machine, with `SMOKE_OWN_DOMAIN` set to a domain you control.
 
-Configuration: `API_KEY_HASHES`, and optionally `RATE_LIMIT_PER_MINUTE` and `RATE_LIMIT_PER_DAY`.
+Configuration:
+
+- `API_KEY_HASHES`: comma-separated SHA-256 hashes of valid keys.
+- `RATE_LIMIT_PER_MINUTE` and `RATE_LIMIT_PER_DAY`: optional overrides.
+- `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` and `KV_REST_API_TOKEN` (what the Vercel Marketplace integration sets): the Upstash Redis store for rate limits and usage counters. Usage is kept for 100 days. If neither pair is set, the API falls back to an in-memory store, logs `store_unconfigured` once, and limits and counters are then per instance and not durable. If the store is unreachable, requests are still served (the rate-limit headers are left off).
+
+`vercel.json` rewrites `/v1/domain/check` and `/v1/health` to the functions and sends every other path to a JSON 404. The Node version comes from `engines` in `package.json` (22.x).
 
 ## Development
 

@@ -2,6 +2,10 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import type { KeyUsage, Store } from "../src/http/store/types.js";
+import {
+  UpstashStore,
+  upstashConfigFromEnv,
+} from "../src/http/store/upstash.js";
 
 export interface UsageReport {
   from: string;
@@ -52,8 +56,8 @@ export async function buildUsageReport(
 }
 
 /**
- * Read-only Store over a JSON dump of `listUsage()` (an array of `{ keyId, counts }`). The
- * durable store (DECISIONS.md D-1) arrives in M4; until then this is the report's data source.
+ * Read-only Store over a JSON dump of `listUsage()` (an array of `{ keyId, counts }`). Kept
+ * for offline use next to the Upstash loader below.
  */
 export class UsageFileStore implements Pick<Store, "listUsage"> {
   constructor(private readonly path: string) {}
@@ -86,9 +90,30 @@ export function formatReport(r: UsageReport): string[] {
   ];
 }
 
+/**
+ * The report's data source: `--usage-file` when given, otherwise the Upstash store named by
+ * UPSTASH_REDIS_REST_URL/TOKEN or KV_REST_API_URL/TOKEN (D-1). Read-only: it only lists usage.
+ */
+export function loadUsageSource(
+  usageFile: string | undefined,
+  env: Record<string, string | undefined>,
+  fetchImpl?: typeof fetch,
+): Pick<Store, "listUsage"> {
+  if (usageFile) return new UsageFileStore(usageFile);
+  const config = upstashConfigFromEnv(env);
+  if (!config) {
+    throw new Error(
+      "No usage source: pass --usage-file usage.json, or set UPSTASH_REDIS_REST_URL and UPSTASH_REDIS_REST_TOKEN (or KV_REST_API_URL and KV_REST_API_TOKEN).",
+    );
+  }
+  return new UpstashStore(config, fetchImpl);
+}
+
 export async function main(
   argv: string[],
   write: (line: string) => void = console.log,
+  env: Record<string, string | undefined> = process.env,
+  fetchImpl?: typeof fetch,
 ): Promise<void> {
   const { values } = parseArgs({
     args: argv,
@@ -98,13 +123,13 @@ export async function main(
       "usage-file": { type: "string" },
     },
   });
-  if (!values.from || !values.to || !values["usage-file"]) {
+  if (!values.from || !values.to) {
     throw new Error(
-      "Usage: usage-report --from YYYY-MM-DD --to YYYY-MM-DD --usage-file usage.json",
+      "Usage: usage-report --from YYYY-MM-DD --to YYYY-MM-DD [--usage-file usage.json]",
     );
   }
   const report = await buildUsageReport(
-    new UsageFileStore(values["usage-file"]),
+    loadUsageSource(values["usage-file"], env, fetchImpl),
     values.from,
     values.to,
   );

@@ -44,6 +44,11 @@ export function logEvent(
   log(JSON.stringify({ event, ts: now.toISOString(), request_id: requestId }));
 }
 
+/** No durable store credentials were found, so this instance uses the in-memory store (D-1). */
+export function logStoreUnconfigured(log: LogSink, now: Date): void {
+  log(JSON.stringify({ event: "store_unconfigured", ts: now.toISOString() }));
+}
+
 /** USE-3 and USE-5: a failed usage write never fails the request. */
 export async function recordSuccessfulCheck(
   store: Store,
