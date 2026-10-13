@@ -68,7 +68,7 @@
     { "id": "H-33", "rules": ["DNS-2"], "input": "Fake resolver errors with codes ENODATA, ENOTFOUND, ESERVFAIL, ETIMEOUT, ECONNREFUSED, and an unknown code",
       "expect": "Classified as no_records, nxdomain, error, error, error, error respectively." },
     { "id": "H-34", "rules": ["DNS-3"], "input": "Fake resolver delays every response by 2.5 s; SPF chain needs 5 sequential lookups",
-      "expect": "Request completes in ≤ ~9 s; lookups started after the 8 s budget resolve as error; response is 200 with summary.status 'incomplete' or 'fail', never a timeout/500." },
+      "expect": "Request completes in ≤ ~9 s; lookups started after the 8 s budget resolve as error; response is 200 with summary.status 'warn', 'incomplete' or 'fail' (never 'pass'); spf.lookup_count_exact is false; a DNS_LOOKUP_FAILED issue is present" },
     { "id": "H-35", "rules": ["DNS-6"], "input": "Fake resolver delays apex TXT, _dmarc TXT and MX by 1 s each",
       "expect": "Total check time < 2 s (they ran concurrently)." },
     { "id": "H-36", "rules": ["RES-3"], "input": "Run every vector in spf/dmarc/mx/check.json; collect all issues",
