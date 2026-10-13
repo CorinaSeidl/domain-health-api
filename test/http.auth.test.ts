@@ -1,5 +1,11 @@
 import { describe, expect } from "vitest";
-import { hashKey, parseKeyHashes } from "../src/http/auth.js";
+import { main as issueKeyMain } from "../scripts/issue-key.js";
+import {
+  authenticate,
+  hashKey,
+  keyIdOf,
+  parseKeyHashes,
+} from "../src/http/auth.js";
 import { K1, makeApp, scenario, sha256 } from "./harness/http.js";
 
 const PATH = "/v1/domain/check?domain=example.com";
@@ -79,9 +85,29 @@ describe("Authentication (SPEC.md §8.3)", () => {
     },
   );
 
-  scenario.todo(
+  scenario(
     "H-17",
-    "scripts/issue-key output format (M3: AUTH-2 and AUTH-6 are not covered until then)",
+    "issue-key makes unique dh_ + 32 base62 keys and prints each key once with its SHA-256",
+    () => {
+      const keys = new Set<string>();
+      for (let i = 0; i < 100; i++) {
+        const lines: string[] = [];
+        issueKeyMain((line) => lines.push(line));
+        const out = lines.join("\n");
+        const key = /\b(dh_[A-Za-z0-9]+)\b/.exec(out)?.[1] ?? "";
+        expect(key).toMatch(/^dh_[A-Za-z0-9]{32}$/);
+        keys.add(key);
+        expect(out.split(key)).toHaveLength(2); // printed exactly once
+        const hash = /\b([0-9a-f]{64})\b/.exec(out)?.[1];
+        expect(hash).toBe(sha256(key));
+        expect(out).toContain(keyIdOf(sha256(key)));
+        // The printed hash is what API_KEY_HASHES accepts, and it authenticates the key.
+        expect(authenticate(key, parseKeyHashes(hash))).toEqual({
+          keyId: keyIdOf(sha256(key)),
+        });
+      }
+      expect(keys.size).toBe(100);
+    },
   );
 
   scenario(

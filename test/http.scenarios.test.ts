@@ -19,10 +19,10 @@ describe("http.json completeness", () => {
     });
   }
 
-  it("only the M3 scenarios are placeholders, and a placeholder is not coverage", () => {
+  it("no scenario is a placeholder: every http.json scenario has a real test", () => {
     const todos = [...sources.matchAll(/scenario\.todo\(\s*"(H-\d+)"/g)].map(
       (m) => m[1],
     );
-    expect(todos.sort()).toEqual(["H-17", "H-31"]);
+    expect(todos).toEqual([]);
   });
 });
