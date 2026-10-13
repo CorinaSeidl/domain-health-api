@@ -216,6 +216,16 @@
       "input": { "domain": "example.com", "dns": { "example.com": { "TXT": [["v=spf1 -ip4:192.0.2.1 ~a:mail.example.com ?mx/24 exp=explain.example.com -all"]] } } },
       "note": "Qualifiers on non-all mechanisms; mx with CIDR suffix; exp does not count.",
       "expect": { "status": "valid", "lookup_count": 2, "issue_codes": [] }
+    },
+    {
+      "id": "SPF-V35", "rules": ["SPF-18", "SPF-15"],
+      "input": { "domain": "example.com", "dns": {
+        "example.com": { "TXT": [["v=spf1 include:a.example.net include:b.example.net -all"]] },
+        "a.example.net": { "TXT": [["v=spf1 include:shared.example.org ~all"]] },
+        "b.example.net": { "TXT": [["v=spf1 include:shared.example.org ~all"]] },
+        "shared.example.org": { "TXT": [["v=spf1 ip4:192.0.2.0/24 ~all"]] } } },
+      "note": "Diamond: shared.example.org is reached via two paths. Not a loop. 2 + 1 + 1 = 4.",
+      "expect": { "status": "valid", "lookup_count": 4, "lookup_count_exact": true, "issue_codes": [] }
     }
   ]
 }

@@ -73,7 +73,7 @@ Normalization happens in this order. A failure at any step returns `400` with th
 | **DNS-5** | TXT records arrive as arrays of strings. Join the strings of a single record with no separator before parsing (RFC 7208 §3.3). |
 | **DNS-6** | Independent top-level lookups (apex TXT, `_dmarc` TXT, MX) run concurrently. |
 | **DNS-7** | **Domain existence:** if the apex TXT lookup and the MX lookup both return `nxdomain`, the domain does not exist. The response is still `200`, with `domain_exists: false`, every check `status: "not_evaluated"`, and a single issue `DOMAIN_NOT_FOUND` (error). |
-| **DNS-8** | When any lookup a check depends on returns `error`, that check's `status` is `"error"`, and an issue `DNS_LOOKUP_FAILED` (warning) is added naming the record that failed. Never report a record as missing when the lookup actually failed. |
+| **DNS-8** | When any lookup a check depends on returns `error`, that check's `status` is `"error"`, and an issue `DNS_LOOKUP_FAILED` (warning) is added naming the record that failed. Never report a record as missing when the lookup actually failed. This applies to each check's primary lookup (apex TXT for SPF, `_dmarc` TXT for DMARC, apex MX for MX). Failures of secondary lookups are governed by SPF-20 (include/redirect targets) and MX-6 (exchange A/AAAA). |
 
 ---
 
@@ -93,7 +93,7 @@ Source: RFC 7208. Vectors: `vectors/spf.json`.
 
 | ID | Rule |
 |---|---|
-| **SPF-4** | Split terms on whitespace. Recognized mechanisms: `all`, `include`, `a`, `mx`, `ptr`, `ip4`, `ip6`, `exists`, each with an optional qualifier (`+ - ~ ?`, default `+`). Recognized modifiers: `redirect=`, `exp=`. Any other `name=value` term is an unknown modifier and is ignored without error. Any other term → `status: "invalid"`, issue `SPF_SYNTAX_ERROR` (**error**) naming the term. |
+| **SPF-4** | Split terms on whitespace. Recognized mechanisms: `all`, `include`, `a`, `mx`, `ptr`, `ip4`, `ip6`, `exists`, each with an optional qualifier (`+ - ~ ?`, default `+`). Recognized modifiers: `redirect=`, `exp=`. Any other `name=value` term is an unknown modifier and is ignored without error. Any other term → `status: "invalid"`, issue `SPF_SYNTAX_ERROR` (**error**) naming the term. An invalid term is reported and skipped; the remaining terms are still evaluated. |
 | **SPF-5** | `ip4:` values must be a valid IPv4 address or CIDR (`/0`–`/32`). `ip6:` values must be a valid IPv6 address or CIDR (`/0`–`/128`). Invalid → `SPF_SYNTAX_ERROR`. |
 | **SPF-6** | `include:` and `exists:` require a domain-spec. `redirect=` requires a value. Missing → `SPF_SYNTAX_ERROR`. |
 | **SPF-7** | More than one `redirect=` or more than one `exp=` → `SPF_SYNTAX_ERROR`. |
@@ -117,7 +117,7 @@ Source: RFC 7208. Vectors: `vectors/spf.json`.
 | **SPF-15** | Recursively resolve `include:` targets and the `redirect=` target (unless SPF-13 applies). Fetch each target's SPF record (applying SPF-1 to it) and add its counted terms to the total. Each include/redirect itself counts as 1. |
 | **SPF-16** | Total count > 10 → issue `SPF_TOO_MANY_LOOKUPS` (**error**) with the count in the message, and `status: "invalid"`. Report the total in `lookup_count`. Once the count passes 10, stop recursing: set `lookup_count` to the count reached at that point and `lookup_count_exact: false`. If evaluation completed without stopping early, `lookup_count_exact: true`. |
 | **SPF-17** | An include/redirect target that has 0 SPF records, or returns `nxdomain` → issue `SPF_INCLUDE_NO_RECORD` (**error**, a permerror at receivers) naming the target. A target with >1 SPF record → same issue code. |
-| **SPF-18** | Loop detection: a target already visited in this evaluation is not fetched again. Issue `SPF_INCLUDE_LOOP` (**error**). |
+| **SPF-18** | Loop detection: a target that is already on the current include/redirect path (an ancestor of the record being evaluated) is not fetched again. Issue `SPF_INCLUDE_LOOP` (**error**). A target reached again through a different path (a "diamond", e.g. two includes that both include the same provider) is not a loop. Evaluate it and count its terms again toward `lookup_count`, as receivers do. A repeated target's DNS response may be cached within the request. Cached responses still count toward `lookup_count`, but not toward the DNS-4 query cap. |
 | **SPF-19** | `include:`/`redirect=` targets containing macros (`%{`) cannot be resolved statically (macros in `exists:` are normal and produce no issue). Count them (1 each) but do not recurse. Issue `SPF_MACRO_UNRESOLVED` (**info**) and set `lookup_count_exact: false`. |
 | **SPF-20** | An include/redirect target lookup that returns `error` (DNS-2) → issue `DNS_LOOKUP_FAILED` (warning) and set `lookup_count_exact: false`. Do not mark the record invalid on that basis alone. |
 | **SPF-21** | Syntax errors inside an included record → issue `SPF_INCLUDE_INVALID` (**error**) naming the target. Do not surface the included record's individual syntax issues. |
@@ -140,9 +140,9 @@ Source: RFC 7489. Vectors: `vectors/dmarc.json`.
 | **DM-1** | Query TXT at `_dmarc.<domain>`. A DMARC record is a TXT record whose joined text, trimmed, begins with `v=DMARC1` (tag name case-insensitive; the value `DMARC1` is matched exactly), followed by `;`, whitespace, or end of string. Other TXT records at that name are ignored. |
 | **DM-2** | 0 records (including `nxdomain` on `_dmarc.<domain>`, which is normal and **not** a DNS failure) → `status: "missing"`, issue `DMARC_MISSING` (**warning**). The message notes that if this is a subdomain, a parent-domain policy may apply, and that V0 does not evaluate inheritance. |
 | **DM-3** | More than 1 record → `status: "invalid"`, issue `DMARC_MULTIPLE_RECORDS` (**error**). Do not parse further. |
-| **DM-4** | Parse tags: split on `;`, trim each, skip empties, split each on the first `=`, trim name and value, lowercase tag names. Unknown tags are ignored. A duplicate known tag → `DMARC_SYNTAX_ERROR` (**error**). |
+| **DM-4** | Parse tags: split on `;`, trim each, skip empties, split each on the first `=`, trim name and value, lowercase tag names. Unknown tags are ignored. A duplicate known tag → `DMARC_SYNTAX_ERROR` (**error**). For a duplicate tag, the first value is used. |
 | **DM-5** | `p` must be present and one of `none`, `quarantine`, `reject` (case-insensitive). Missing or invalid → `status: "invalid"`, issue `DMARC_INVALID_POLICY` (**error**). |
-| **DM-6** | `sp` (if present) must be `none`/`quarantine`/`reject`. `adkim`/`aspf` (if present) must be `r`/`s`. `pct` (if present) must be an integer 0–100. `fo` and `rf` are ignored in V0. Violations → `DMARC_SYNTAX_ERROR` (**error**) naming the tag. |
+| **DM-6** | `sp` (if present) must be `none`/`quarantine`/`reject`. `adkim`/`aspf` (if present) must be `r`/`s`. `pct` (if present) must be an integer 0–100. `fo` and `rf` are ignored in V0. Violations → `DMARC_SYNTAX_ERROR` (**error**) naming the tag. An invalid `sp`, `adkim`, `aspf` or `pct` value is reported as `null`, not as its default. |
 | **DM-7** | `p=none` → issue `DMARC_POLICY_NONE` (**info**). It is monitoring only, with no enforcement. |
 | **DM-8** | `pct` < 100 → issue `DMARC_PARTIAL_PCT` (**info**) with the value. |
 | **DM-9** | No `rua` tag → issue `DMARC_NO_RUA` (**info**). No aggregate reports are being collected. |
@@ -175,7 +175,7 @@ Source: RFC 5321, RFC 7505. Vectors: `vectors/mx.json`.
 |---|---|
 | **RES-1** | The response shape is defined by `openapi.yaml` → `DomainCheckResult`. Fields are always present. Use `null` for unknown or absent values, never omit them. |
 | **RES-2** | Each check object has its own `issues` array. The top-level `issues` array is the concatenation of all check issues plus domain-level issues (DNS-7), in order: domain, spf, dmarc, mx, then within each check in the order produced. |
-| **RES-3** | Every issue is `{ code, severity, check, message }`. `severity` ∈ `error`, `warning`, `info`. `check` ∈ `domain`, `spf`, `dmarc`, `mx`. `code` is from the closed list in §9. Messages are one or two plain sentences, with no markdown. |
+| **RES-3** | Every issue is `{ code, severity, check, message }`. `severity` ∈ `error`, `warning`, `info`. `check` ∈ `domain`, `spf`, `dmarc`, `mx`. `code` is from the closed list in §9. Messages are one or two plain sentences, with no markdown. Within a check, an issue with the same code and message is reported only once. |
 | **RES-4** | `summary.status`: `fail` if any error-severity issue, else `incomplete` if any check has `status: "error"`, else `warn` if any warning, else `pass`. `summary` also carries `errors`, `warnings`, `info` counts. |
 | **RES-5** | `checked_at` is an ISO-8601 UTC timestamp. `domain` is the normalized ASCII domain. |
 | **RES-6** | Raw records are returned verbatim, joined per DNS-5: `spf.records` (array of strings), `dmarc.records` (array of strings). `spf.record`/`dmarc.record` is the single record when exactly one exists, else `null`. |
