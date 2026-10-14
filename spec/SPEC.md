@@ -320,7 +320,7 @@ V0 ships, meaning it gets deployed and the X post goes out, only when all of the
 | ID | Rule |
 |---|---|
 | **LP-1** | `GET /` returns an HTML page (`Content-Type: text/html; charset=utf-8`) with no authentication. The page loads no third-party scripts, fonts, stylesheets, images or analytics, and a Content-Security-Policy header enforces that. Everything except the key form reads correctly with JavaScript off. JavaScript is used only for the key form. |
-| **LP-2** | The page contains: a one-sentence description of the API; a `curl` example that uses the host the page was served from; a sample response excerpt; the free limits (10 requests/minute and 200 requests/day, taken from the configured limits, RL-1); the SCOPE-1 limitations; and a link to the GitHub repository. |
+| **LP-2** | The page contains: a one-sentence description of the API; a `curl` example that uses the host the page was served from; a sample response excerpt; the free limits (10 requests/minute and 200 requests/day, taken from the configured limits, RL-1); and the SCOPE-1 limitations. It does not link to the source repository. |
 | **LP-3** | An email form posts to `/v1/keys`. On `201` it shows the key once, with a copy button and the warning "Save this now — it won’t be shown again." On `409` it says a key already exists for that email and links to `CONTACT_URL`, an environment variable (the link is omitted when it is unset). On `429` it says "try again later". On `400` it shows the API's message. |
 | **LP-4** | The page shows the privacy line: "We store your email only to contact you about this API. The API doesn’t save the domains you check." |
 | **LP-5** | SCOPE-2 applies to all page copy, including text set by the page's script. |

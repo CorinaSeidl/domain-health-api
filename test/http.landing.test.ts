@@ -5,7 +5,6 @@ import {
   DESCRIPTION,
   KEY_FORM_SCRIPT,
   PRIVACY_LINE,
-  REPO_URL,
   SAMPLE_EXCERPT,
   SAVE_WARNING,
   renderLanding,
@@ -76,14 +75,12 @@ describe("Landing page (SPEC.md §13)", () => {
     );
     expect(markup).not.toMatch(/@import|url\(/i);
     expect(markup).not.toMatch(/\ssrc=|\ssrcset=/i);
-    // Every absolute URL is this origin or the repository link.
+    // Every absolute URL is this origin.
     const urls = [...html.matchAll(/https?:\/\/[^\s"'<)\\]+/g)].map(
       (m) => m[0],
     );
     for (const url of urls) {
-      expect(url.startsWith(ORIGIN) || url.startsWith(REPO_URL), url).toBe(
-        true,
-      );
+      expect(url.startsWith(ORIGIN), url).toBe(true);
     }
     // No analytics or font hosts, however they might be named.
     expect(html).not.toMatch(
@@ -217,9 +214,8 @@ describe("Landing page (SPEC.md §13)", () => {
     expect(text).toMatch(/DKIM was not checked/);
   });
 
-  it("LP-2 the page links to the GitHub repository", async () => {
-    expect((await page()).html).toContain(`<a href="${REPO_URL}">`);
-    expect(REPO_URL).toBe("https://github.com/CorinaSeidl/domain-health-api");
+  it("LP-2 the page does not link to the source repository", async () => {
+    expect((await page()).html).not.toMatch(/github\.com/i);
   });
 
   it("LP-3 the email form posts to /v1/keys", async () => {

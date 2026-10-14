@@ -5,9 +5,6 @@ import type { RateLimits } from "./ratelimit.js";
 
 export { KEY_FORM_SCRIPT };
 
-/** LP-2: where the source lives. */
-export const REPO_URL = "https://github.com/CorinaSeidl/domain-health-api";
-
 /** LP-4. The wording is fixed by the spec. */
 export const PRIVACY_LINE =
   "We store your email only to contact you about this API. The API doesn’t save the domains you check.";
@@ -168,9 +165,6 @@ export function renderLanding(options: LandingOptions): string {
   <ul>
       ${limitations}
   </ul>
-
-  <h2>Source</h2>
-  <p><a href="${REPO_URL}">${REPO_URL}</a></p>
 </main>
 <script>${KEY_FORM_SCRIPT}</script>
 </body>
