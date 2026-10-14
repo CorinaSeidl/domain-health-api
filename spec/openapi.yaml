@@ -152,18 +152,17 @@ paths:
       operationId: createKey
       summary: Get a free API key (self-serve)
       description: |
-        Unauthenticated. Issues one key per email and returns it exactly once (KEY-1..KEY-5).
+        Unauthenticated. Issues a new key and returns it exactly once (KEY-1..KEY-5). Email is optional.
         Every request counts against a per-IP throttle of 5 per hour (KEY-4).
       security: []
       requestBody:
-        required: true
+        required: false
         content:
           application/json:
             schema:
               type: object
-              required: [email]
               properties:
-                email: { type: string, maxLength: 254 }
+                email: { type: [string, 'null'], maxLength: 254 }
       responses:
         '201':
           description: Key issued. The plaintext key is not retrievable again (KEY-1).
@@ -171,7 +170,7 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/KeyIssued' }
         '400':
-          description: Invalid or missing email (KEY-2).
+          description: Invalid email or malformed body (KEY-2).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -179,11 +178,6 @@ paths:
           description: Only POST is accepted.
           headers:
             Allow: { schema: { type: string, const: POST } }
-          content:
-            application/json:
-              schema: { $ref: '#/components/schemas/Error' }
-        '409':
-          description: A key already exists for this email (KEY-3).
           content:
             application/json:
               schema: { $ref: '#/components/schemas/Error' }
@@ -264,7 +258,6 @@ components:
                 - not_found
                 - rate_limited
                 - invalid_email
-                - key_exists
                 - internal_error
             message: { type: string }
         request_id: { type: string }

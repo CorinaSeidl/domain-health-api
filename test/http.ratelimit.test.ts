@@ -25,7 +25,7 @@ class ThrowingStore implements Store {
   listUsage(): Promise<KeyUsage[]> {
     return this.fail();
   }
-  createKey(): Promise<boolean> {
+  createKey(): Promise<void> {
     return this.fail();
   }
   getKey(): Promise<KeyRecord | null> {

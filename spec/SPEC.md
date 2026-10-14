@@ -288,15 +288,15 @@ Adding a code is a spec change: bump the minor version and update this table and
 
 ## 11. Self-serve keys (DECISIONS.md D-2)
 
-Active rules. D-2 is decided as option (b): developers get a key by posting an email to `POST /v1/keys`, from the landing page in §13. Keys issued this way are valid alongside the hashes in `API_KEY_HASHES` (AUTH-6). They are stored in the durable store (D-1) as hashes (AUTH-3).
+Active rules. D-2 is decided as option (b), revised: developers get a key with one `POST /v1/keys`, from the landing page in §13. An email is optional and never required. Keys issued this way are valid alongside the hashes in `API_KEY_HASHES` (AUTH-6). They are stored in the durable store (D-1) as hashes (AUTH-3).
 
 | ID | Rule |
 |---|---|
-| **KEY-1** | `POST /v1/keys`, unauthenticated, JSON body `{ "email": "<address>" }`. Returns `201 { "api_key": "dh_...", "key_id": "...", "limits": { "per_minute": 10, "per_day": 200 } }`. The plaintext key is returned exactly once and never stored. |
-| **KEY-2** | Email: trimmed, lowercased, ≤ 254 chars, one `@`, and a domain part passing IN-6. Invalid → `400 invalid_email`. No verification email in V0. |
-| **KEY-3** | One active key per email. A repeat request for the same email → `409 key_exists`, and no new key is issued. (Key recovery is out of scope.) |
-| **KEY-4** | Signup throttle: 5 signups per hour per client IP. The IP is taken from `x-real-ip`, falling back to the first entry of `x-forwarded-for`. It is used only as a hashed throttle key with a 1-hour TTL, and is never logged (USE-2) or persisted beyond the throttle window. Every `POST /v1/keys` counts against the throttle, including requests rejected as invalid or as `key_exists`, so the endpoint cannot be used to probe which emails have keys. Over the limit → `429 rate_limited` with a `Retry-After` header. If neither header is present, requests share one throttle bucket. If the store is unavailable the throttle fails open (A-7). |
-| **KEY-5** | Store `{ key_hash, key_id, email, created_at, status }`. The email is stored for contact only and never logged. `status` is `active` or `revoked`; a revoked key is rejected with `invalid_api_key` (AUTH-5). |
+| **KEY-1** | `POST /v1/keys`, unauthenticated. The body is empty, `{}`, or `{ "email": "<address>" }`. Returns `201 { "api_key": "dh_...", "key_id": "...", "limits": { "per_minute": 10, "per_day": 200 } }`. The plaintext key is returned exactly once and never stored. |
+| **KEY-2** | Email is optional. A missing body, a missing `email`, `null` or a blank string means no email. A given email is trimmed and lowercased, and must be ≤ 254 chars with one `@` and a domain part passing IN-6. An invalid email, a non-string `email`, or a non-empty body that is not a JSON object → `400 invalid_email`. No verification email in V0. |
+| **KEY-3** | Keys are not limited per email. Every request that passes KEY-2 and KEY-4 issues a new key, with or without an email. (Key recovery is out of scope: a lost key is replaced by requesting a new one.) |
+| **KEY-4** | Signup throttle: 5 signups per hour per client IP. The IP is taken from `x-real-ip`, falling back to the first entry of `x-forwarded-for`. It is used only as a hashed throttle key with a 1-hour TTL, and is never logged (USE-2) or persisted beyond the throttle window. Every `POST /v1/keys` counts against the throttle, including requests rejected as invalid. Over the limit → `429 rate_limited` with a `Retry-After` header. If neither header is present, requests share one throttle bucket. If the store is unavailable the throttle fails open (A-7). |
+| **KEY-5** | Store `{ key_hash, key_id, email, created_at, status }`, with `email` null when none was given. A given email is stored for contact only and never logged. `status` is `active` or `revoked`; a revoked key is rejected with `invalid_api_key` (AUTH-5). |
 
 ---
 
@@ -321,6 +321,6 @@ V0 ships, meaning it gets deployed and the X post goes out, only when all of the
 |---|---|
 | **LP-1** | `GET /` returns an HTML page (`Content-Type: text/html; charset=utf-8`) with no authentication. The page loads no third-party scripts, fonts, stylesheets, images or analytics, and a Content-Security-Policy header enforces that. Everything except the key form reads correctly with JavaScript off. JavaScript is used only for the key form. |
 | **LP-2** | The page contains: a one-sentence description of the API; a `curl` example that uses the host the page was served from; a sample response excerpt; the free limits (10 requests/minute and 200 requests/day, taken from the configured limits, RL-1); and the SCOPE-1 limitations. It does not link to the source repository. |
-| **LP-3** | An email form posts to `/v1/keys`. On `201` it shows the key once, with a copy button and the warning "Save this now — it won’t be shown again." On `409` it says a key already exists for that email and links to `CONTACT_URL`, an environment variable (the link is omitted when it is unset). On `429` it says "try again later". On `400` it shows the API's message. |
-| **LP-4** | The page shows the privacy line: "We store your email only to contact you about this API. The API doesn’t save the domains you check." |
+| **LP-3** | A key form posts to `/v1/keys`, with an optional email field. On `201` it shows the key once, with a copy button and the warning "Save this now — it won’t be shown again." On `429` it says "try again later". On `400` it shows the API's message. |
+| **LP-4** | The page shows the privacy line: "Email is optional. If you add one, we store it only to contact you about this API. The API doesn’t save the domains you check." |
 | **LP-5** | SCOPE-2 applies to all page copy, including text set by the page's script. |

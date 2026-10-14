@@ -1,9 +1,4 @@
-import {
-  emailIndex,
-  type KeyRecord,
-  type KeyUsage,
-  type Store,
-} from "./types.js";
+import { type KeyRecord, type KeyUsage, type Store } from "./types.js";
 
 /** In-memory Store for tests and local dev (RL-4). State is per process and lost on restart. */
 export class MemoryStore implements Store {
@@ -13,7 +8,6 @@ export class MemoryStore implements Store {
   >();
   private readonly usage = new Map<string, Map<string, number>>();
   private readonly keys = new Map<string, KeyRecord>();
-  private readonly emails = new Set<string>();
   private readonly now: () => number;
 
   constructor(now: () => number = Date.now) {
@@ -60,12 +54,9 @@ export class MemoryStore implements Store {
     );
   }
 
-  createKey(record: KeyRecord): Promise<boolean> {
-    const index = emailIndex(record.email);
-    if (this.emails.has(index)) return Promise.resolve(false);
-    this.emails.add(index);
+  createKey(record: KeyRecord): Promise<void> {
     this.keys.set(record.keyHash, { ...record });
-    return Promise.resolve(true);
+    return Promise.resolve();
   }
 
   getKey(keyHash: string): Promise<KeyRecord | null> {

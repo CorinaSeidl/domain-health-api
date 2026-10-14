@@ -8,7 +8,7 @@ import {
   clientIp,
   createSelfServeKey,
   keyIssuedBody,
-  validateEmail,
+  parseKeyRequest,
 } from "./keys.js";
 import { CONTENT_SECURITY_POLICY, renderLanding } from "./landing.js";
 import {
@@ -32,8 +32,6 @@ export interface HandlerConfig {
   store: Store;
   log: LogSink;
   version: string;
-  /** LP-3: where the landing page sends someone whose email already has a key (CONTACT_URL). */
-  contactUrl?: string | null;
   /** Injectable clock for rate-limit windows, timestamps and usage days. */
   now?: () => Date;
 }
@@ -48,7 +46,6 @@ type ErrorCode =
   | "not_found"
   | "rate_limited"
   | "invalid_email"
-  | "key_exists"
   | "internal_error";
 
 const CHECK_PATH = "/v1/domain/check";
@@ -129,7 +126,6 @@ export function createHandler(
     const html = renderLanding({
       origin: url.origin,
       limits: config.limits,
-      contactUrl: config.contactUrl ?? null,
     });
     return new Response(state.head ? null : html, {
       status: 200,
@@ -178,35 +174,18 @@ export function createHandler(
       );
     }
 
-    // KEY-2
-    let email: unknown;
+    // KEY-1, KEY-2: email is optional.
     const text = await request.text();
-    if (text.length <= MAX_BODY_CHARS) {
-      try {
-        email = (JSON.parse(text) as { email?: unknown } | null)?.email;
-      } catch {
-        email = undefined;
-      }
-    }
-    const checked = validateEmail(email);
-    if (!checked.ok) {
-      return fail(state, 400, "invalid_email", checked.message);
+    const parsed =
+      text.length <= MAX_BODY_CHARS
+        ? parseKeyRequest(text)
+        : ({ ok: false, message: "The request body is too large." } as const);
+    if (!parsed.ok) {
+      return fail(state, 400, "invalid_email", parsed.message);
     }
 
-    const created = await createSelfServeKey(
-      config.store,
-      checked.email,
-      now(),
-    );
-    if (created === null) {
-      // KEY-3
-      return fail(
-        state,
-        409,
-        "key_exists",
-        "A key already exists for that email address.",
-      );
-    }
+    // KEY-3: every request that gets here issues a new key.
+    const created = await createSelfServeKey(config.store, parsed.email, now());
     return respond(
       state,
       201,

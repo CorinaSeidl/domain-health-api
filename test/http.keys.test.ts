@@ -101,8 +101,6 @@ describe("Self-serve keys (SPEC.md §11)", () => {
   });
 
   it.each([
-    ["empty", ""],
-    ["blank", "   "],
     ["no @", "dev.example.com"],
     ["two @", "a@b@example.com"],
     ["no local part", "@example.com"],
@@ -114,7 +112,6 @@ describe("Self-serve keys (SPEC.md §11)", () => {
     ["numeric TLD", "dev@example.123"],
     ["too long", `${"a".repeat(250)}@example.com`],
     ["not a string", 42],
-    ["null", null],
     ["object", { a: 1 }],
   ])("KEY-2 invalid email (%s) is 400 invalid_email", async (_name, email) => {
     const app = makeApp();
@@ -123,10 +120,29 @@ describe("Self-serve keys (SPEC.md §11)", () => {
     expect(await errorCode(res)).toBe("invalid_email");
   });
 
-  it("KEY-2 a missing body, bad JSON, a JSON array and an oversized body are 400 invalid_email", async () => {
+  it("KEY-2 no email is fine: a missing body, {}, a null email and a blank email all issue a key", async () => {
     const app = makeApp();
     for (const body of [
       undefined,
+      "",
+      "{}",
+      '{"email":null}',
+      '{"email":"  "}',
+    ]) {
+      const res = await app.request("/v1/keys", {
+        method: "POST",
+        key: null,
+        ...(body === undefined ? {} : { body }),
+      });
+      expect(res.status, String(body)).toBe(201);
+    }
+    const held = (app.store as MemoryStore).snapshot();
+    expect(held.match(/"email":null/g)).toHaveLength(5);
+  });
+
+  it("KEY-2 bad JSON, a non-object body and an oversized body are 400 invalid_email", async () => {
+    const app = makeApp();
+    for (const body of [
       "not json",
       "[]",
       "null",
@@ -160,26 +176,25 @@ describe("Self-serve keys (SPEC.md §11)", () => {
     expect(long.length).toBe(254);
     expect((await app.signup(long)).status).toBe(201);
     expect((await app.signup("  Dev@Example.COM  ")).status).toBe(201);
-    expect((await app.signup("dev@example.com")).status).toBe(409);
+    const held = (app.store as MemoryStore).snapshot();
+    expect(held).toContain('"email":"dev@example.com"');
+    expect(held).not.toContain("Dev@Example.COM");
   });
 
-  it("KEY-3 a repeat email is 409 key_exists and no second key is issued", async () => {
+  it("KEY-3 a repeat email gets a new, different key, and both keys work", async () => {
     const app = makeApp();
     const first = (await (
       await app.signup("dev@example.com")
     ).json()) as Issued;
     const again = await app.signup("DEV@example.com");
-    expect(again.status).toBe(409);
-    expect(await errorCode(again)).toBe("key_exists");
-    const text = JSON.stringify(
-      await (await app.signup("dev@example.com")).json(),
-    );
-    expect(text).not.toContain("api_key");
-    expect(
-      (await app.check("example.com", { key: first.api_key })).status,
-    ).toBe(200);
+    expect(again.status).toBe(201);
+    const second = (await again.json()) as Issued;
+    expect(second.api_key).not.toBe(first.api_key);
+    for (const key of [first.api_key, second.api_key]) {
+      expect((await app.check("example.com", { key })).status).toBe(200);
+    }
     const held = (app.store as MemoryStore).snapshot();
-    expect(held.match(/"keyHash"/g)).toHaveLength(1);
+    expect(held.match(/"keyHash"/g)).toHaveLength(2);
   });
 
   it("KEY-3 different emails each get a key", async () => {
@@ -264,13 +279,13 @@ describe("Self-serve keys (SPEC.md §11)", () => {
     expect(res.status).toBe(429);
   });
 
-  it("KEY-4 invalid, repeated and accepted requests all count, so 409 cannot probe for emails", async () => {
+  it("KEY-4 invalid and accepted requests all count", async () => {
     const app = makeApp();
     const headers = { "x-real-ip": "203.0.113.7" };
     await app.signup("dev@example.com", { headers }); // 201
-    await app.signup("dev@example.com", { headers }); // 409
+    await app.signup("dev@example.com", { headers }); // 201
     await app.signup("not-an-email", { headers }); // 400
-    await app.signup("dev@example.com", { headers }); // 409
+    await app.signup("dev@example.com", { headers }); // 201
     await app.signup("also bad", { headers }); // 400
     expect((await app.signup("dev@example.com", { headers })).status).toBe(429);
   });

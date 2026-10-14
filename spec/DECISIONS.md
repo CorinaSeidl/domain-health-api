@@ -17,7 +17,7 @@ Each decision is **Decided** (build against it) or **Open** (needs founder appro
 | A-7 | **Fail open** on rate-limit/usage store outages. | A metering outage shouldn't take the API down during a launch. |
 | A-8 | **Zero incremental spend** without explicit approval. | Standing rule. |
 | D-1 | **Upstash Redis, free tier, added through the Vercel Marketplace**, as the durable store for rate limits and usage metrics. | Real per-key limits and 7-day metrics for the launch gate, at $0 and without SDK lock-in (thin REST adapter). |
-| D-2 | **Self-serve keys: option (b)**, `POST /v1/keys` with an email, served from a landing page at `GET /`. | One-call signup removes the manual step between the X post and a first successful call. Needs D-1 (Upstash) for key storage and per-IP throttling. No email verification in V0. Specified in SPEC §11 and §13. |
+| D-2 | **Self-serve keys: option (b)**, `POST /v1/keys` served from a landing page at `GET /`. **Revised Oct 2026: email is optional, not required**, and keys are not limited per email. | One-call signup removes the manual step between the X post and a first successful call; an email gate cost signups without adding real signal (per-key usage is the signal). Needs D-1 (Upstash) for key storage and per-IP throttling. Specified in SPEC §11 and §13. |
 | D-3 | **Vercel Hobby with a `*.vercel.app` URL**, free launch only; move to Pro before any paid tier. | $0 now. Hobby is restricted to non-commercial use, so charging for the API requires Pro first. |
 
 ---

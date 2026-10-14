@@ -8,7 +8,6 @@ import {
   SAMPLE_EXCERPT,
   SAVE_WARNING,
   renderLanding,
-  safeContactUrl,
 } from "../src/http/landing.js";
 import { createHash } from "node:crypto";
 import { fakeBrowser } from "./harness/fake-dom.js";
@@ -135,7 +134,6 @@ describe("Landing page (SPEC.md §13)", () => {
         "key-result",
         "key-value",
         "key-copy",
-        "key-exists",
       ]),
     );
     for (const id of ids) expect(html).toContain(`id="${id}"`);
@@ -156,7 +154,6 @@ describe("Landing page (SPEC.md §13)", () => {
     const other = renderLanding({
       origin: "https://checks.example.org",
       limits: { perMinute: 10, perDay: 200 },
-      contactUrl: null,
     });
     expect(other).toContain(
       'curl -s "https://checks.example.org/v1/domain/check',
@@ -167,7 +164,6 @@ describe("Landing page (SPEC.md §13)", () => {
     const html = renderLanding({
       origin: 'https://x.test/"><script>alert(1)</script>',
       limits: { perMinute: 10, perDay: 200 },
-      contactUrl: null,
     });
     expect(html).not.toContain("<script>alert(1)");
     expect(html.match(/<script>/g)).toHaveLength(1);
@@ -218,14 +214,15 @@ describe("Landing page (SPEC.md §13)", () => {
     expect((await page()).html).not.toMatch(/github\.com/i);
   });
 
-  it("LP-3 the email form posts to /v1/keys", async () => {
+  it("LP-3 the key form posts to /v1/keys with an optional email field", async () => {
     const { html } = await page();
     expect(html).toMatch(
       /<form id="key-form" action="\/v1\/keys" method="post"/,
     );
-    expect(html).toMatch(
-      /<input id="email" name="email" type="email" required/,
-    );
+    const input = /<input id="email"[^>]*>/.exec(html)![0];
+    expect(input).toContain('type="email"');
+    expect(input).not.toMatch(/\srequired/);
+    expect(html).toMatch(/<label for="email">Email \(optional/);
     const browser = fakeBrowser(() =>
       Promise.resolve(Response.json({}, { status: 500 })),
     );
@@ -291,48 +288,6 @@ describe("Landing page (SPEC.md §13)", () => {
     expect(browser.el["key-status"].textContent).toMatch(/copy it by hand/);
   });
 
-  it("LP-3 on 409 it says a key already exists and links to CONTACT_URL", async () => {
-    const { html } = await page({
-      contactUrl: "https://example.org/help?topic=key",
-    });
-    const block = /<p id="key-exists" hidden>([\s\S]*?)<\/p>/.exec(html)![1]!;
-    expect(block).toContain("A key already exists for that email.");
-    expect(block).toContain('<a href="https://example.org/help?topic=key">');
-
-    const mailto = await page({ contactUrl: "mailto:help@example.org" });
-    expect(mailto.html).toContain('<a href="mailto:help@example.org">');
-
-    const browser = fakeBrowser(() =>
-      Promise.resolve(
-        Response.json({ error: { code: "key_exists" } }, { status: 409 }),
-      ),
-    );
-    browser.run();
-    await browser.submit("dev@example.com");
-    expect(browser.el["key-exists"].hidden).toBe(false);
-    expect(browser.el["key-result"].hidden).toBe(true);
-    expect(browser.el["key-submit"].disabled).toBe(false);
-  });
-
-  it("LP-3 without CONTACT_URL, or with an unsafe one, the 409 text has no link", async () => {
-    for (const contactUrl of [
-      null,
-      "",
-      "javascript:alert(1)",
-      "data:text/html,x",
-      "not a url",
-    ]) {
-      const { html } = await page({ contactUrl });
-      const block = /<p id="key-exists" hidden>([\s\S]*?)<\/p>/.exec(html)![1]!;
-      expect(block, String(contactUrl)).not.toContain("<a ");
-      expect(block).toContain("A key already exists for that email.");
-    }
-    expect(safeContactUrl(" https://example.org/x ")).toBe(
-      "https://example.org/x",
-    );
-    expect(safeContactUrl(undefined)).toBeNull();
-  });
-
   it("LP-3 on 429 it says to try again later", async () => {
     const browser = fakeBrowser(() =>
       Promise.resolve(
@@ -386,7 +341,7 @@ describe("Landing page (SPEC.md §13)", () => {
   });
 
   it("LP-3 the page script works end to end against the real handler", async () => {
-    const app = makeApp({ contactUrl: "https://example.org/help" });
+    const app = makeApp();
     const toHandler = (url: string, init: RequestInit) =>
       app.handle(new Request(`${ORIGIN}${url}`, init));
     const first = fakeBrowser(toHandler);
@@ -396,11 +351,15 @@ describe("Landing page (SPEC.md §13)", () => {
     expect(key).toMatch(/^dh_[0-9A-Za-z]{32}$/);
     expect((await app.check("example.com", { key })).status).toBe(200);
 
-    const second = fakeBrowser(toHandler);
-    second.run();
-    await second.submit("DEV@example.com");
-    expect(second.el["key-exists"].hidden).toBe(false);
-    expect(second.el["key-value"].textContent).toBe("");
+    // KEY-3: no per-email limit, and no email at all is fine.
+    for (const email of ["DEV@example.com", ""]) {
+      const again = fakeBrowser(toHandler);
+      again.run();
+      await again.submit(email);
+      const other = again.el["key-value"].textContent;
+      expect(other, email).toMatch(/^dh_[0-9A-Za-z]{32}$/);
+      expect(other).not.toBe(key);
+    }
 
     const third = fakeBrowser(toHandler);
     third.run();
@@ -411,14 +370,13 @@ describe("Landing page (SPEC.md §13)", () => {
   it("LP-4 the page shows the privacy line", async () => {
     const { html } = await page();
     expect(PRIVACY_LINE).toBe(
-      "We store your email only to contact you about this API. The API doesn’t save the domains you check.",
+      "Email is optional. If you add one, we store it only to contact you about this API. The API doesn’t save the domains you check.",
     );
     expect(html).toContain(`<p>${PRIVACY_LINE}</p>`);
   });
 
   it("LP-5 [SCOPE-2] no page copy, including the script's, says deliver, safe, compliant or guarantee", async () => {
-    const withContact = (await page({ contactUrl: "https://example.org/help" }))
-      .html;
+    const withContact = (await page()).html;
     // The one allowed phrase is the fixed limitation sentence "not an email deliverability test".
     const allowed = "not an email deliverability test";
     const copy = withContact.replace(allowed, "");

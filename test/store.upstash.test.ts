@@ -6,7 +6,6 @@ import {
   loadUsageSource,
   main as usageReport,
 } from "../scripts/usage-report.js";
-import { configFromEnv } from "../src/http/config.js";
 import { hashKey, keyIdOf } from "../src/http/auth.js";
 import { handle } from "../src/http/vercel.js";
 import { createStore } from "../src/http/store/index.js";
@@ -142,7 +141,7 @@ describe("UpstashStore counters (RL-1, RL-4)", () => {
 
 describe("UpstashStore self-serve keys (KEY-3, KEY-5)", () => {
   const record = (
-    email: string,
+    email: string | null,
     keyHash = hashKey(`dh_${"a".repeat(32)}`),
   ) => ({
     keyHash,
@@ -155,22 +154,25 @@ describe("UpstashStore self-serve keys (KEY-3, KEY-5)", () => {
   it("KEY-5 stores the record under its hash and reads it back", async () => {
     const { store } = setup();
     const r = record("dev@example.com");
-    expect(await store.createKey(r)).toBe(true);
+    await store.createKey(r);
     expect(await store.getKey(r.keyHash)).toEqual(r);
     expect(await store.getKey(hashKey("dh_other"))).toBeNull();
+    const noEmail = record(null, hashKey(`dh_${"c".repeat(32)}`));
+    await store.createKey(noEmail);
+    expect(await store.getKey(noEmail.keyHash)).toEqual(noEmail);
   });
 
-  it("KEY-3 a second key for the same email is refused and leaves nothing behind", async () => {
+  it("KEY-3 a second key for the same email is stored too, with no per-email index", async () => {
     const { store, fake } = setup();
     const first = record("dev@example.com");
     const second = record("dev@example.com", hashKey(`dh_${"b".repeat(32)}`));
-    expect(await store.createKey(first)).toBe(true);
-    expect(await store.createKey(second)).toBe(false);
-    expect(await store.getKey(second.keyHash)).toBeNull();
+    await store.createKey(first);
+    await store.createKey(second);
     expect(await store.getKey(first.keyHash)).toEqual(first);
-    expect(
-      [...fake.strings.keys()].filter((k) => k.startsWith("key:h:")),
-    ).toEqual([`key:h:${first.keyHash}`]);
+    expect(await store.getKey(second.keyHash)).toEqual(second);
+    expect([...fake.strings.keys()].sort()).toEqual(
+      [`key:h:${first.keyHash}`, `key:h:${second.keyHash}`].sort(),
+    );
   });
 
   it("KEY-5 store keys use hashes, never the plaintext key or the raw email", async () => {
@@ -178,18 +180,18 @@ describe("UpstashStore self-serve keys (KEY-3, KEY-5)", () => {
     const r = record("Private.Person@example.com".toLowerCase());
     await store.createKey(r);
     const names = [...fake.strings.keys()];
-    expect(names.every((k) => /^key:[he]:[0-9a-f]{64}$/.test(k))).toBe(true);
+    expect(names.every((k) => /^key:h:[0-9a-f]{64}$/.test(k))).toBe(true);
     expect(names.join(" ")).not.toContain("private");
   });
 
-  it("KEY-3 and AUTH-6 two instances sharing the store agree on who has a key", async () => {
+  it("KEY-3 and AUTH-6 two instances sharing the store both accept a key issued by either", async () => {
     const { store } = setup();
     const a = makeApp({ store });
     const b = makeApp({ store });
     const issued = (await (await a.signup("dev@example.com")).json()) as {
       api_key: string;
     };
-    expect((await b.signup("dev@example.com")).status).toBe(409);
+    expect((await b.signup("dev@example.com")).status).toBe(201);
     expect((await b.check("example.com", { key: issued.api_key })).status).toBe(
       200,
     );
@@ -413,16 +415,6 @@ describe("Vercel config (HTTP-3)", () => {
     expect(((await res.json()) as { api_key: string }).api_key).toMatch(
       /^dh_[0-9A-Za-z]{32}$/,
     );
-  });
-
-  it("LP-3 CONTACT_URL is read from the environment and unsafe values are dropped", () => {
-    expect(
-      configFromEnv({ CONTACT_URL: "https://example.org/help" }).contactUrl,
-    ).toBe("https://example.org/help");
-    expect(configFromEnv({}).contactUrl).toBeNull();
-    expect(
-      configFromEnv({ CONTACT_URL: "javascript:alert(1)" }).contactUrl,
-    ).toBeNull();
   });
 
   it("HTTP-3 the not-found function answers with the JSON error envelope", async () => {

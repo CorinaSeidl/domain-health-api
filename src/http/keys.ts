@@ -32,7 +32,7 @@ export type EmailResult =
   { ok: true; email: string } | { ok: false; message: string };
 
 /**
- * KEY-2: trimmed, lowercased, at most 254 characters, exactly one `@`, a non-empty local part
+ * KEY-2 (for a given email): trimmed, lowercased, at most 254 characters, exactly one `@`, a non-empty local part
  * without whitespace, and a domain part that passes IN-6. No verification email in V0.
  */
 export function validateEmail(input: unknown): EmailResult {
@@ -70,6 +70,37 @@ export function validateEmail(input: unknown): EmailResult {
     };
   }
   return { ok: true, email };
+}
+
+export type KeyRequestResult =
+  { ok: true; email: string | null } | { ok: false; message: string };
+
+const BODY_SHAPE_MESSAGE =
+  'Send an empty body, or JSON like {"email": "you@example.com"}. Email is optional.';
+
+/**
+ * KEY-1, KEY-2: the request body is empty, `{}`, or `{"email": ...}`. A missing body, a missing
+ * `email`, `null` or a blank string means no email. Anything else that is not a JSON object, or an
+ * `email` that is not a string, is rejected.
+ */
+export function parseKeyRequest(text: string): KeyRequestResult {
+  if (text.trim() === "") return { ok: true, email: null };
+  let body: unknown;
+  try {
+    body = JSON.parse(text);
+  } catch {
+    return { ok: false, message: BODY_SHAPE_MESSAGE };
+  }
+  if (typeof body !== "object" || body === null || Array.isArray(body)) {
+    return { ok: false, message: BODY_SHAPE_MESSAGE };
+  }
+  const email = (body as { email?: unknown }).email;
+  if (email === undefined || email === null) return { ok: true, email: null };
+  if (typeof email !== "string")
+    return { ok: false, message: BODY_SHAPE_MESSAGE };
+  if (email.trim() === "") return { ok: true, email: null };
+  const checked = validateEmail(email);
+  return checked.ok ? { ok: true, email: checked.email } : checked;
 }
 
 /** KEY-4: `x-real-ip`, else the first entry of `x-forwarded-for`. Null when neither is usable. */
@@ -129,14 +160,14 @@ export interface CreatedKey {
 }
 
 /**
- * KEY-1, KEY-3, KEY-5: issues a key for `email` and stores its hash. Returns null when the email
- * already has a key. The plaintext key exists only in the return value.
+ * KEY-1, KEY-3, KEY-5: issues a new key and stores its hash, with the optional email. There is no
+ * per-email limit. The plaintext key exists only in the return value.
  */
 export async function createSelfServeKey(
   store: Store,
-  email: string,
+  email: string | null,
   now: Date,
-): Promise<CreatedKey | null> {
+): Promise<CreatedKey> {
   const { key, hash, keyId } = issueKey();
   const record: KeyRecord = {
     keyHash: hash,
@@ -145,7 +176,7 @@ export async function createSelfServeKey(
     createdAt: now.toISOString(),
     status: "active",
   };
-  if (!(await store.createKey(record))) return null;
+  await store.createKey(record);
   return { apiKey: key, keyId, record };
 }
 

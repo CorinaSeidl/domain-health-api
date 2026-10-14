@@ -46,7 +46,6 @@ export interface AppOptions {
   store?: Store;
   resolver?: HandlerConfig["resolver"];
   start?: number;
-  contactUrl?: string | null;
 }
 
 /** Handler under test plus a controllable clock and captured log lines. */
@@ -63,7 +62,6 @@ export function makeApp(options: AppOptions = {}) {
     store: options.store ?? store,
     log: (line) => logs.push(line),
     version: VERSION,
-    contactUrl: options.contactUrl ?? null,
     now,
   });
 

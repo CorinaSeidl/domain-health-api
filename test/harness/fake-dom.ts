@@ -26,7 +26,6 @@ const IDS = [
   "key-result",
   "key-value",
   "key-copy",
-  "key-exists",
 ] as const;
 
 export interface FakeBrowser {
@@ -53,7 +52,6 @@ export function fakeBrowser(
   // As in the HTML: the form starts hidden, the result and exists blocks start hidden.
   el["key-form"].hidden = true;
   el["key-result"].hidden = true;
-  el["key-exists"].hidden = true;
   const fetchCalls: FakeBrowser["fetchCalls"] = [];
   const copied: string[] = [];
   const document = {

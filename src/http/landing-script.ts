@@ -13,12 +13,10 @@ export const KEY_FORM_SCRIPT = `(function () {
   var result = document.getElementById("key-result");
   var keyValue = document.getElementById("key-value");
   var copy = document.getElementById("key-copy");
-  var exists = document.getElementById("key-exists");
   var failed = "Something went wrong. Try again later.";
   function clear() {
     status.textContent = "";
     result.hidden = true;
-    exists.hidden = true;
   }
   form.addEventListener("submit", function (event) {
     event.preventDefault();
@@ -44,9 +42,7 @@ export const KEY_FORM_SCRIPT = `(function () {
             return;
           }
           submit.disabled = false;
-          if (r.status === 409) {
-            exists.hidden = false;
-          } else if (r.status === 429) {
+          if (r.status === 429) {
             status.textContent = "Too many attempts. Try again later.";
           } else if (r.status === 400 && r.body && r.body.error) {
             status.textContent = r.body.error.message;

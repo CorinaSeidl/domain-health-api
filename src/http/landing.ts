@@ -7,7 +7,7 @@ export { KEY_FORM_SCRIPT };
 
 /** LP-4. The wording is fixed by the spec. */
 export const PRIVACY_LINE =
-  "We store your email only to contact you about this API. The API doesn’t save the domains you check.";
+  "Email is optional. If you add one, we store it only to contact you about this API. The API doesn’t save the domains you check.";
 
 /** LP-3. The wording is fixed by the spec. */
 export const SAVE_WARNING = "Save this now — it won’t be shown again.";
@@ -48,7 +48,7 @@ body { font: 16px/1.55 system-ui, sans-serif; max-width: 46rem; margin: 0 auto; 
 h1 { font-size: 1.8rem; margin-bottom: 0.25rem; }
 h2 { font-size: 1.15rem; margin-top: 2rem; }
 pre, code { font: 0.9em ui-monospace, monospace; }
-pre { background: rgba(127, 127, 127, 0.15); padding: 0.8rem 1rem; overflow-x: auto; border-radius: 6px; }
+pre { background: rgba(127, 127, 127, 0.15); padding: 0.8rem 1rem; white-space: pre-wrap; overflow-wrap: anywhere; border-radius: 6px; }
 code { background: rgba(127, 127, 127, 0.15); padding: 0.1em 0.3em; border-radius: 4px; }
 pre code { background: none; padding: 0; }
 input, button { font: inherit; padding: 0.45rem 0.7rem; }
@@ -78,41 +78,18 @@ const escapeHtml = (text: string) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-/** CONTACT_URL is operator config, but it ends up in an href, so only these schemes pass. */
-export function safeContactUrl(
-  value: string | null | undefined,
-): string | null {
-  const trimmed = value?.trim();
-  if (!trimmed) return null;
-  try {
-    const url = new URL(trimmed);
-    return ["https:", "http:", "mailto:"].includes(url.protocol)
-      ? url.href
-      : null;
-  } catch {
-    return null;
-  }
-}
-
 export interface LandingOptions {
   /** The origin the page was served from, e.g. https://domain-health-api.vercel.app. */
   origin: string;
   limits: RateLimits;
-  contactUrl: string | null;
 }
 
-/** LP-1..LP-5. One static page; the only per-request parts are the host, limits and contact link. */
+/** LP-1..LP-5. One static page; the only per-request parts are the host and limits. */
 export function renderLanding(options: LandingOptions): string {
   const origin = escapeHtml(options.origin);
-  const contact = safeContactUrl(options.contactUrl);
-  const contactLink = contact
-    ? ` <a href="${escapeHtml(contact)}">Contact us</a> if you need help with it.`
-    : "";
   const checkCurl = `curl -s "${origin}/v1/domain/check?domain=example.com" \\
   -H "Authorization: Bearer $DH_API_KEY"`;
-  const keyCurl = `curl -s -X POST "${origin}/v1/keys" \\
-  -H "Content-Type: application/json" \\
-  -d '{"email":"you@example.com"}'`;
+  const keyCurl = `curl -s -X POST "${origin}/v1/keys"`;
   const limitations = LIMITATIONS.map((l) => `<li>${escapeHtml(l)}</li>`).join(
     "\n      ",
   );
@@ -133,8 +110,8 @@ export function renderLanding(options: LandingOptions): string {
 
   <h2>Get a free key</h2>
   <form id="key-form" action="/v1/keys" method="post" hidden>
-    <label for="email">Email</label>
-    <input id="email" name="email" type="email" required autocomplete="email">
+    <label for="email">Email (optional, for notice of breaking changes)</label>
+    <input id="email" name="email" type="email" autocomplete="email">
     <button id="key-submit" type="submit">Get a key</button>
   </form>
   <noscript>
@@ -148,7 +125,6 @@ export function renderLanding(options: LandingOptions): string {
     <p><button id="key-copy" type="button">Copy</button></p>
     <p class="warn">${escapeHtml(SAVE_WARNING)}</p>
   </div>
-  <p id="key-exists" hidden>A key already exists for that email.${contactLink}</p>
   <p>${escapeHtml(PRIVACY_LINE)}</p>
 
   <h2>Try it</h2>
