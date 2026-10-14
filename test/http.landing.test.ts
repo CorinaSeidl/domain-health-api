@@ -222,7 +222,12 @@ describe("Landing page (SPEC.md §13)", () => {
     const input = /<input id="email"[^>]*>/.exec(html)![0];
     expect(input).toContain('type="email"');
     expect(input).not.toMatch(/\srequired/);
-    expect(html).toMatch(/<label for="email">Email \(optional/);
+    expect(html).toMatch(/<label for="email">Optional:/);
+    // The button comes before the email field, so it reads as the main action.
+    expect(html.indexOf('id="key-submit"')).toBeLessThan(
+      html.indexOf('<input id="email"'),
+    );
+    expect(textOf(html)).toContain("No signup needed.");
     const browser = fakeBrowser(() =>
       Promise.resolve(Response.json({}, { status: 500 })),
     );

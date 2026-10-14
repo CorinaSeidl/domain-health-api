@@ -53,6 +53,9 @@ code { background: rgba(127, 127, 127, 0.15); padding: 0.1em 0.3em; border-radiu
 pre code { background: none; padding: 0; }
 input, button { font: inherit; padding: 0.45rem 0.7rem; }
 input { min-width: 15rem; }
+.primary button { font-weight: 600; padding: 0.6rem 1.4rem; margin-right: 0.5rem; }
+.optional { font-size: 0.9rem; opacity: 0.8; }
+.optional input { margin-top: 0.3rem; }
 #key-value { font-size: 1.05rem; word-break: break-all; }
 .warn { font-weight: 600; }
 `;
@@ -110,9 +113,11 @@ export function renderLanding(options: LandingOptions): string {
 
   <h2>Get a free key</h2>
   <form id="key-form" action="/v1/keys" method="post" hidden>
-    <label for="email">Email (optional, for notice of breaking changes)</label>
-    <input id="email" name="email" type="email" autocomplete="email">
-    <button id="key-submit" type="submit">Get a key</button>
+    <p class="primary"><button id="key-submit" type="submit">Get a key</button> No signup needed.</p>
+    <p class="optional">
+      <label for="email">Optional: add an email first if you want notice of breaking changes.</label><br>
+      <input id="email" name="email" type="email" autocomplete="email">
+    </p>
   </form>
   <noscript>
     <p>The key form needs JavaScript. Without it, request a key from a terminal:</p>
