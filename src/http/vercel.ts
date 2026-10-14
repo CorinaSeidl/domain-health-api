@@ -27,7 +27,10 @@ function getHandler(): (request: Request) => Promise<Response> {
 /** Functions under /api are served at /api/v1/...; the public path is /v1/... (SPEC §8.1). */
 export function handle(request: Request): Promise<Response> {
   const url = new URL(request.url);
-  if (url.pathname.startsWith("/api/")) {
+  if (url.pathname === "/api/index") {
+    url.pathname = "/"; // vercel.json rewrites GET / to the landing function
+    request = new Request(url, request);
+  } else if (url.pathname.startsWith("/api/")) {
     url.pathname = url.pathname.slice("/api".length);
     request = new Request(url, request);
   }

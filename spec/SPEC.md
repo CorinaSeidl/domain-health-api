@@ -1,6 +1,6 @@
 # Domain Health API — Behavior Specification
 
-**Version:** 0.1.0 (V0)
+**Version:** 0.2.0 (V0)
 **Status:** Ready for implementation
 **Date:** 2026-10-13
 **Owner:** Corina (decisions) · Implementer: Claude Code
@@ -286,17 +286,17 @@ Adding a code is a spec change: bump the minor version and update this table and
 
 ---
 
-## 11. Proposed: self-serve keys (pending DECISIONS.md D-2)
+## 11. Self-serve keys (DECISIONS.md D-2)
 
-**Not part of V0.** These rules are written down so the build can be fast once approved. They are excluded from the rule-coverage check until D-2 is decided.
+Active rules. D-2 is decided as option (b), revised: developers get a key with one `POST /v1/keys`, from the landing page in §13. An email is optional and never required. Keys issued this way are valid alongside the hashes in `API_KEY_HASHES` (AUTH-6). They are stored in the durable store (D-1) as hashes (AUTH-3).
 
 | ID | Rule |
 |---|---|
-| **KEY-1** | `POST /v1/keys`, unauthenticated, JSON body `{ "email": "<address>" }`. Returns `201 { "api_key": "dh_...", "key_id": "...", "limits": { "per_minute": 10, "per_day": 200 } }`. The plaintext key is returned exactly once and never stored. |
-| **KEY-2** | Email: trimmed, lowercased, ≤ 254 chars, one `@`, and a domain part passing IN-6. Invalid → `400 invalid_email`. No verification email in V0. |
-| **KEY-3** | One active key per email. A repeat request for the same email → `409 key_exists`, and no new key is issued. (Key recovery is out of scope.) |
-| **KEY-4** | Signup throttle: 5 signups per hour per client IP. The IP is used in memory/store only for throttling, and is never logged or persisted beyond the throttle window (USE-2). |
-| **KEY-5** | Store `{ key_hash, key_id, email, created_at, status }`. The email is stored for contact only and never logged. |
+| **KEY-1** | `POST /v1/keys`, unauthenticated. The body is empty, `{}`, or `{ "email": "<address>" }`. Returns `201 { "api_key": "dh_...", "key_id": "...", "limits": { "per_minute": 10, "per_day": 200 } }`. The plaintext key is returned exactly once and never stored. |
+| **KEY-2** | Email is optional. A missing body, a missing `email`, `null` or a blank string means no email. A given email is trimmed and lowercased, and must be ≤ 254 chars with one `@` and a domain part passing IN-6. An invalid email, a non-string `email`, or a non-empty body that is not a JSON object → `400 invalid_email`. No verification email in V0. |
+| **KEY-3** | Keys are not limited per email. Every request that passes KEY-2 and KEY-4 issues a new key, with or without an email. (Key recovery is out of scope: a lost key is replaced by requesting a new one.) |
+| **KEY-4** | Signup throttle: 5 signups per hour per client IP. The IP is taken from `x-real-ip`, falling back to the first entry of `x-forwarded-for`. It is used only as a hashed throttle key with a 1-hour TTL, and is never logged (USE-2) or persisted beyond the throttle window. Every `POST /v1/keys` counts against the throttle, including requests rejected as invalid. Over the limit → `429 rate_limited` with a `Retry-After` header. If neither header is present, requests share one throttle bucket. If the store is unavailable the throttle fails open (A-7). |
+| **KEY-5** | Store `{ key_hash, key_id, email, created_at, status }`, with `email` null when none was given. A given email is stored for contact only and never logged. `status` is `active` or `revoked`; a revoked key is rejected with `invalid_api_key` (AUTH-5). |
 
 ---
 
@@ -305,8 +305,22 @@ Adding a code is a spec change: bump the minor version and update this table and
 V0 ships, meaning it gets deployed and the X post goes out, only when all of these hold:
 
 1. Every vector in `vectors/*.json` passes.
-2. Every rule ID in this document, except the §11 `KEY-*` rules, is referenced by at least one test or vector. This is checked by `scripts/check-rule-coverage`, which extracts rule IDs from `SPEC.md` and greps them in `test/` and `spec/vectors/`.
+2. Every rule ID in this document is referenced by at least one test or vector. This is checked by `scripts/check-rule-coverage`, which extracts rule IDs from `SPEC.md` and greps them in `test/` and `spec/vectors/`.
 3. The `openapi.yaml` response shapes are validated against real handler output in tests.
 4. A live smoke run against these real domains returns `200` with plausible results, reviewed by a human: `google.com`, `github.com`, `example.com` (expected: null MX, SPF `-all`), a known nonexistent domain (expected: `DOMAIN_NOT_FOUND`), and one domain Corina controls.
 5. The README curl example, copied verbatim, works against the deployed URL.
 6. A grep of logs from the smoke run shows no domains, raw keys, or IPs (USE-2).
+
+---
+
+## 13. Landing page (DECISIONS.md D-2)
+
+`GET /` serves one static HTML page where a developer can read what the API does and get a key.
+
+| ID | Rule |
+|---|---|
+| **LP-1** | `GET /` returns an HTML page (`Content-Type: text/html; charset=utf-8`) with no authentication. The page loads no third-party scripts, fonts, stylesheets, images or analytics, and a Content-Security-Policy header enforces that. Everything except the key form reads correctly with JavaScript off. JavaScript is used only for the key form. |
+| **LP-2** | The page contains: a one-sentence description of the API; a `curl` example that uses the host the page was served from; a sample response excerpt; the free limits (10 requests/minute and 200 requests/day, taken from the configured limits, RL-1); and the SCOPE-1 limitations. It does not link to the source repository. |
+| **LP-3** | A key form posts to `/v1/keys`, with an optional email field. On `201` it shows the key once, with a copy button and the warning "Save this now — it won’t be shown again." On `429` it says "try again later". On `400` it shows the API's message. |
+| **LP-4** | The page shows the privacy line: "Email is optional. If you add one, we store it only to contact you about this API. The API doesn’t save the domains you check." |
+| **LP-5** | SCOPE-2 applies to all page copy, including text set by the page's script. |

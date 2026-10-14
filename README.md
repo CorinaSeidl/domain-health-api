@@ -19,6 +19,18 @@ curl -s "https://REPLACE_WITH_DEPLOYED_HOST/v1/domain/check?domain=example.com" 
   -H "Authorization: Bearer $DH_API_KEY"
 ```
 
+## Get a key
+
+Open the landing page (`GET /`) and click **Get a key**, or ask for one from a terminal:
+
+```sh
+curl -s -X POST "https://REPLACE_WITH_DEPLOYED_HOST/v1/keys"
+```
+
+The reply is `201` with `api_key`, `key_id` and your `limits`. **The key is shown once and cannot be recovered**, so save it; if you lose it, request a new one. Each network address can ask for 5 keys per hour (`429 rate_limited`).
+
+Email is optional. To hear about breaking changes, send `-H "Content-Type: application/json" -d '{"email":"you@example.com"}'` with the request. If you add one, we store it only to contact you about this API.
+
 Send your key as `Authorization: Bearer <key>` or as an `X-API-Key: <key>` header. Keys look like `dh_` followed by 32 letters and digits. Never put a key in the query string: a `?api_key=` or `?key=` parameter is rejected with `400 key_in_query`, because URLs end up in logs.
 
 Send a bare domain such as `example.com`, not a URL. Internationalized names are converted to ASCII (punycode) and the response returns the ASCII form.
@@ -130,8 +142,9 @@ Errors use one envelope and a code from a closed list:
 | 400    | `missing_domain`, `invalid_domain`   | The `domain` parameter is absent or not a bare public name |
 | 400    | `key_in_query`                       | A key was sent in the URL; use a header                    |
 | 401    | `missing_api_key`, `invalid_api_key` | No key, or an unknown or revoked key                       |
+| 400    | `invalid_email`                      | `POST /v1/keys` got a malformed email or body              |
 | 404    | `not_found`                          | Unknown path                                               |
-| 405    | `method_not_allowed`                 | Only `GET` and `HEAD` are accepted                         |
+| 405    | `method_not_allowed`                 | Only `GET` and `HEAD` are accepted (`POST` for `/v1/keys`) |
 | 429    | `rate_limited`                       | Over a limit; wait `Retry-After` seconds                   |
 | 500    | `internal_error`                     | Unexpected failure                                         |
 
@@ -156,7 +169,7 @@ Each request also has a DNS time budget of 8 seconds and a cap of 40 DNS queries
 
 ## Privacy
 
-The API never logs the domain you check, your key, your IP address or your `Authorization` header. A key appears in logs only as `key_id`, the first 12 hex characters of its SHA-256.
+The API never logs the domain you check, your key, your IP address, your email address or your `Authorization` header. If you give an email, it is stored only to contact you about this API. A signup's IP address is kept as a one-way hash for at most an hour, to limit signups. A key appears in logs only as `key_id`, the first 12 hex characters of its SHA-256.
 
 ## For operators
 
@@ -164,12 +177,12 @@ Scripts run with `npm run <name> -- <args>`. Only `smoke` (live DNS) and `usage-
 
 - `issue-key` creates a key and prints it once, with its SHA-256 and `key_id`. Add the hash to the `API_KEY_HASHES` environment variable (comma-separated). Only hashes are ever stored.
 - `usage-report -- --from 2026-10-07 --to 2026-10-13` prints unique active keys, total successful checks and repeat keys (active on two or more distinct UTC days) for the range. It reads the Upstash store named by the environment variables below. To report from a saved dump instead, add `--usage-file usage.json` (`[{"keyId":"…","counts":{"2026-10-07":3}}]`).
-- `check-rule-coverage` fails if any rule ID in `spec/SPEC.md` (except the proposed `KEY-*` rules) has no test. It runs in CI.
+- `check-rule-coverage` fails if any rule ID in `spec/SPEC.md` has no test. It runs in CI.
 - `smoke` runs the live check against real domains. It needs real public DNS, so run it from the manual **Smoke** GitHub Actions workflow or a local machine, with `SMOKE_OWN_DOMAIN` set to a domain you control.
 
 Configuration:
 
-- `API_KEY_HASHES`: comma-separated SHA-256 hashes of valid keys.
+- `API_KEY_HASHES`: comma-separated SHA-256 hashes of valid keys. Keys issued by `POST /v1/keys` are valid as well; they live in the Upstash store (set the variables below, or issued keys are lost on restart).
 - `RATE_LIMIT_PER_MINUTE` and `RATE_LIMIT_PER_DAY`: optional overrides.
 - `UPSTASH_REDIS_REST_URL` and `UPSTASH_REDIS_REST_TOKEN`, or `KV_REST_API_URL` and `KV_REST_API_TOKEN` (what the Vercel Marketplace integration sets): the Upstash Redis store for rate limits and usage counters. Usage is kept for 100 days. If neither pair is set, the API falls back to an in-memory store, logs `store_unconfigured` once, and limits and counters are then per instance and not durable. If the store is unreachable, requests are still served (the rate-limit headers are left off).
 

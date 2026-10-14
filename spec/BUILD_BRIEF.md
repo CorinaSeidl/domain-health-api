@@ -68,7 +68,7 @@ domain-health-api/
   scripts/
     issue-key.ts             AUTH-6
     usage-report.ts          USE-4
-    check-rule-coverage.ts   Acceptance #2: fails CI if any non-§11 rule ID is untested
+    check-rule-coverage.ts   Acceptance #2: fails CI if any rule ID is untested
     smoke.ts                 Acceptance #4: live run against real domains (run only via smoke.yml or locally)
   .github/workflows/
     ci.yml                   PR gate: typecheck, lint, test, check-rule-coverage
@@ -86,7 +86,7 @@ Suggested as GitHub Issues. Each issue body links the SPEC sections it implement
 
 **M3: Release tooling.** `issue-key`, `usage-report` (against the store interface), `check-rule-coverage` wired into CI, `smoke.ts` + `smoke.yml`, and the README. Done when `check-rule-coverage` passes in CI and the README curl example is correct for a placeholder host.
 
-**M4: Gated, do not start without approval.** Upstash-REST store adapter wired in (D-1), and self-serve keys per SPEC §11 (D-2).
+**M4: Gated, do not start without approval.** Upstash-REST store adapter wired in (D-1), and self-serve keys per SPEC §11 and the landing page per SPEC §13 (D-2). Both decided.
 
 ## Implementation notes (traps to avoid)
 

@@ -1,4 +1,4 @@
-import type { KeyUsage, Store } from "./types.js";
+import { type KeyRecord, type KeyUsage, type Store } from "./types.js";
 
 /** Upstash Redis REST credentials (DECISIONS.md D-1). */
 export interface UpstashConfig {
@@ -48,6 +48,8 @@ function utcDayOf(ms: number): string {
  * Keys: counters are whatever the caller passes (rate limits); usage is `usage:c:<key_id>:<day>`
  * (successful checks that day) plus `usage:d:<day>` (the key_ids active that day). Both expire
  * USAGE_RETENTION_DAYS after their day ends, and a day with a count is an active day.
+ * Self-serve keys (KEY-5) are `key:h:<key_hash>` (the JSON record, no expiry). There is no
+ * per-email index (KEY-3).
  */
 export class UpstashStore implements Store {
   constructor(
@@ -150,5 +152,27 @@ export class UpstashStore implements Store {
     return [...byKey]
       .sort(([a], [b]) => a.localeCompare(b))
       .map(([keyId, counts]) => ({ keyId, counts }));
+  }
+
+  async createKey(record: KeyRecord): Promise<void> {
+    await this.send("/pipeline", [
+      ["SET", `key:h:${record.keyHash}`, JSON.stringify(record)],
+    ]);
+  }
+
+  async getKey(keyHash: string): Promise<KeyRecord | null> {
+    const [value] = await this.send("/pipeline", [["GET", `key:h:${keyHash}`]]);
+    if (typeof value !== "string") return null;
+    const parsed = JSON.parse(value) as Partial<KeyRecord>;
+    if (
+      parsed.keyHash !== keyHash ||
+      typeof parsed.keyId !== "string" ||
+      (typeof parsed.email !== "string" && parsed.email !== null) ||
+      typeof parsed.createdAt !== "string" ||
+      (parsed.status !== "active" && parsed.status !== "revoked")
+    ) {
+      throw new Error("Upstash returned an unexpected key record");
+    }
+    return parsed as KeyRecord;
   }
 }

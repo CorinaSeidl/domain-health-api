@@ -6,7 +6,7 @@ function positiveInt(value: string | undefined, fallback: number): number {
   return Number.isInteger(n) && n > 0 ? n : fallback;
 }
 
-/** Reads the environment: API_KEY_HASHES (AUTH-6) and the RL-1 limits, which are config. */
+/** Reads the environment: API_KEY_HASHES (AUTH-6) and the RL-1 limits (config). */
 export function configFromEnv(env: Record<string, string | undefined>): {
   keyHashes: Set<string>;
   limits: RateLimits;

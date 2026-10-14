@@ -6,6 +6,7 @@ import {
   loadUsageSource,
   main as usageReport,
 } from "../scripts/usage-report.js";
+import { hashKey, keyIdOf } from "../src/http/auth.js";
 import { handle } from "../src/http/vercel.js";
 import { createStore } from "../src/http/store/index.js";
 import { MemoryStore } from "../src/http/store/memory.js";
@@ -135,6 +136,88 @@ describe("UpstashStore counters (RL-1, RL-4)", () => {
     // The counters are shared by every instance that talks to the same store.
     const other = makeApp({ store });
     expect((await other.check("example.com")).status).toBe(429);
+  });
+});
+
+describe("UpstashStore self-serve keys (KEY-3, KEY-5)", () => {
+  const record = (
+    email: string | null,
+    keyHash = hashKey(`dh_${"a".repeat(32)}`),
+  ) => ({
+    keyHash,
+    keyId: keyIdOf(keyHash),
+    email,
+    createdAt: new Date(START).toISOString(),
+    status: "active" as const,
+  });
+
+  it("KEY-5 stores the record under its hash and reads it back", async () => {
+    const { store } = setup();
+    const r = record("dev@example.com");
+    await store.createKey(r);
+    expect(await store.getKey(r.keyHash)).toEqual(r);
+    expect(await store.getKey(hashKey("dh_other"))).toBeNull();
+    const noEmail = record(null, hashKey(`dh_${"c".repeat(32)}`));
+    await store.createKey(noEmail);
+    expect(await store.getKey(noEmail.keyHash)).toEqual(noEmail);
+  });
+
+  it("KEY-3 a second key for the same email is stored too, with no per-email index", async () => {
+    const { store, fake } = setup();
+    const first = record("dev@example.com");
+    const second = record("dev@example.com", hashKey(`dh_${"b".repeat(32)}`));
+    await store.createKey(first);
+    await store.createKey(second);
+    expect(await store.getKey(first.keyHash)).toEqual(first);
+    expect(await store.getKey(second.keyHash)).toEqual(second);
+    expect([...fake.strings.keys()].sort()).toEqual(
+      [`key:h:${first.keyHash}`, `key:h:${second.keyHash}`].sort(),
+    );
+  });
+
+  it("KEY-5 store keys use hashes, never the plaintext key or the raw email", async () => {
+    const { store, fake } = setup();
+    const r = record("Private.Person@example.com".toLowerCase());
+    await store.createKey(r);
+    const names = [...fake.strings.keys()];
+    expect(names.every((k) => /^key:h:[0-9a-f]{64}$/.test(k))).toBe(true);
+    expect(names.join(" ")).not.toContain("private");
+  });
+
+  it("KEY-3 and AUTH-6 two instances sharing the store both accept a key issued by either", async () => {
+    const { store } = setup();
+    const a = makeApp({ store });
+    const b = makeApp({ store });
+    const issued = (await (await a.signup("dev@example.com")).json()) as {
+      api_key: string;
+    };
+    expect((await b.signup("dev@example.com")).status).toBe(201);
+    expect((await b.check("example.com", { key: issued.api_key })).status).toBe(
+      200,
+    );
+  });
+
+  it("KEY-4 the signup throttle is shared through the store and carries only a hash of the IP", async () => {
+    const { store, fake } = setup();
+    const ip = "203.0.113.50";
+    const headers = { "x-real-ip": ip };
+    const a = makeApp({ store });
+    const b = makeApp({ store });
+    for (let i = 0; i < 5; i++) {
+      await (i % 2 ? a : b).signup(`dev${i}@example.com`, { headers });
+    }
+    expect((await a.signup("x@example.com", { headers })).status).toBe(429);
+    expect(JSON.stringify(fake.calls)).not.toContain(ip);
+    expect([...fake.expiry.keys()].some((k) => k.startsWith("ks:"))).toBe(true);
+  });
+
+  it("KEY-1 a store outage while issuing a key is a 500 that leaks nothing", async () => {
+    const { store, fake } = setup();
+    const app = makeApp({ store });
+    fake.state.failWith = "network";
+    const res = await app.signup("dev@example.com");
+    expect(res.status).toBe(500);
+    expect(JSON.stringify(await res.json())).not.toContain(FAKE_TOKEN);
   });
 });
 
@@ -279,9 +362,12 @@ describe("Vercel config (HTTP-3)", () => {
     expect(vercel.rewrites.map((r) => [r.source, r.destination])).toEqual([
       ["/v1/domain/check", "/api/v1/domain/check"],
       ["/v1/health", "/api/v1/health"],
+      ["/v1/keys", "/api/v1/keys"],
+      ["/", "/api/index"],
       ["/((?!api/).*)", "/api/not-found"],
     ]);
-    const catchAll = new RegExp(`^${vercel.rewrites[2]!.source}$`);
+    // Rewrites apply in order, so "/" reaches the landing page before this pattern sees it.
+    const catchAll = new RegExp(`^${vercel.rewrites[4]!.source}$`);
     for (const path of [
       "/",
       "/nope",
@@ -301,6 +387,34 @@ describe("Vercel config (HTTP-3)", () => {
 
   it("pins Node 22 (Vercel reads the version from engines, not vercel.json)", () => {
     expect(pkg.engines.node).toBe("22.x");
+  });
+
+  it("LP-1 the landing function serves the page at the host it was reached on", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const res = await handle(
+      new Request("https://checks.example.org/api/index"),
+    );
+    log.mockRestore();
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
+    expect(await res.text()).toContain(
+      'curl -s "https://checks.example.org/v1/domain/check?domain=example.com"',
+    );
+  });
+
+  it("KEY-1 the keys function issues a key", async () => {
+    const log = vi.spyOn(console, "log").mockImplementation(() => {});
+    const res = await handle(
+      new Request("https://api.test/api/v1/keys", {
+        method: "POST",
+        body: JSON.stringify({ email: "adapter@example.com" }),
+      }),
+    );
+    log.mockRestore();
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { api_key: string }).api_key).toMatch(
+      /^dh_[0-9A-Za-z]{32}$/,
+    );
   });
 
   it("HTTP-3 the not-found function answers with the JSON error envelope", async () => {

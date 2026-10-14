@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Domain Health API
-  version: 0.1.0
+  version: 0.2.0
   summary: Structured SPF, DMARC and MX diagnostics for a domain.
   description: |
     Inspects public DNS for a single domain and returns structured diagnostics.
@@ -145,7 +145,54 @@ paths:
                 additionalProperties: false
                 properties:
                   status: { type: string, const: ok }
-                  version: { type: string, example: 0.1.0 }
+                  version: { type: string, example: 0.2.0 }
+
+  /v1/keys:
+    post:
+      operationId: createKey
+      summary: Get a free API key (self-serve)
+      description: |
+        Unauthenticated. Issues a new key and returns it exactly once (KEY-1..KEY-5). Email is optional.
+        Every request counts against a per-IP throttle of 5 per hour (KEY-4).
+      security: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                email: { type: [string, 'null'], maxLength: 254 }
+      responses:
+        '201':
+          description: Key issued. The plaintext key is not retrievable again (KEY-1).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/KeyIssued' }
+        '400':
+          description: Invalid email or malformed body (KEY-2).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '405':
+          description: Only POST is accepted.
+          headers:
+            Allow: { schema: { type: string, const: POST } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '429':
+          description: Signup throttle exceeded (KEY-4).
+          headers:
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
+        '500':
+          description: Internal error (HTTP-8).
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Error' }
 
 components:
   securitySchemes:
@@ -173,6 +220,22 @@ components:
       schema: { type: integer }
 
   schemas:
+    KeyIssued:
+      type: object
+      required: [api_key, key_id, limits, request_id]
+      additionalProperties: false
+      properties:
+        api_key: { type: string, pattern: '^dh_[0-9A-Za-z]{32}$' }
+        key_id: { type: string, pattern: '^[0-9a-f]{12}$', description: AUTH-4. }
+        limits:
+          type: object
+          required: [per_minute, per_day]
+          additionalProperties: false
+          properties:
+            per_minute: { type: integer, minimum: 1 }
+            per_day: { type: integer, minimum: 1 }
+        request_id: { type: string }
+
     Error:
       type: object
       required: [error, request_id]
@@ -194,6 +257,7 @@ components:
                 - method_not_allowed
                 - not_found
                 - rate_limited
+                - invalid_email
                 - internal_error
             message: { type: string }
         request_id: { type: string }

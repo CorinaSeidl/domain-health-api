@@ -18,18 +18,17 @@ import { MemoryStore } from "../src/http/store/memory.js";
 import { schemaValidator } from "./harness/openapi.js";
 import { readFileSync } from "node:fs";
 
-// Fixtures use made-up IDs (ZZ-n, KEY-n) so they cannot mark a real SPEC rule as covered.
+// Fixtures use made-up IDs (ZZ-n) so they cannot mark a real SPEC rule as covered. so they cannot mark a real SPEC rule as covered.
 const SPEC = `
 | ID | Rule |
 | **ZZ-1** | one |
 | **ZZ-2** | two |
 | **ZZ-10** | ten |
-| **KEY-1** | proposed |
 Prose mentioning ZZ-99 outside a table row.
 `;
 
 describe("check-rule-coverage (Acceptance #2)", () => {
-  it("extracts bold table IDs and skips the §11 KEY-* rules", () => {
+  it("extracts bold table IDs", () => {
     expect(extractRuleIds(SPEC)).toEqual(["ZZ-1", "ZZ-2", "ZZ-10"]);
   });
 
@@ -56,15 +55,29 @@ describe("check-rule-coverage (Acceptance #2)", () => {
     expect(result.uncovered).toEqual(["ZZ-1", "ZZ-2"]);
   });
 
-  it("fails on an untested rule and does not require KEY-* rules", () => {
+  it("fails on an untested rule", () => {
     const none = findUncovered({ spec: SPEC, tests: [""], vectorFiles: [] });
-    expect(none).toEqual({ total: 3, uncovered: ["ZZ-1", "ZZ-2", "ZZ-10"] });
+    expect(none).toEqual({
+      total: 3,
+      uncovered: ["ZZ-1", "ZZ-2", "ZZ-10"],
+    });
     const all = findUncovered({
       spec: SPEC,
       tests: ["it('ZZ-1 ZZ-2 ZZ-10', () => {})"],
       vectorFiles: [],
     });
     expect(all.uncovered).toEqual([]);
+  });
+
+  it("KEY-style and LP-style rule IDs are required like any other", () => {
+    const spec = "| **KEY-1** | a |\n| **KEY-5** | b |\n| **LP-1** | c |\n";
+    expect(extractRuleIds(spec)).toEqual(["KEY-1", "KEY-5", "LP-1"]);
+    const result = findUncovered({
+      spec,
+      tests: ["it('KEY-1 is tested', () => {})"],
+      vectorFiles: [],
+    });
+    expect(result.uncovered).toEqual(["KEY-5", "LP-1"]);
   });
 
   it("counts data-vector rules, but an http.json scenario only once it has a real test", () => {
