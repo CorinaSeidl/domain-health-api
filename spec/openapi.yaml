@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Domain Health API
-  version: 0.1.0
+  version: 0.2.0
   summary: Structured SPF, DMARC and MX diagnostics for a domain.
   description: |
     Inspects public DNS for a single domain and returns structured diagnostics.
@@ -145,7 +145,7 @@ paths:
                 additionalProperties: false
                 properties:
                   status: { type: string, const: ok }
-                  version: { type: string, example: 0.1.0 }
+                  version: { type: string, example: 0.2.0 }
 
   /v1/keys:
     post:

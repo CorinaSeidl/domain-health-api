@@ -1,6 +1,6 @@
 {
   "name": "domain-health-api",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "private": true,
   "description": "Structured SPF, DMARC and MX diagnostics for a domain.",
   "type": "module",

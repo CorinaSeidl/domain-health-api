@@ -1,4 +1,4 @@
-# Domain Health API — Spec Package (V0.1.0)
+# Domain Health API — Spec Package (V0.2.0)
 
 A contracts-first spec for a micro-API that returns structured SPF, DMARC, and MX diagnostics for a domain. Built to ship on X as the first micro-API experiment.
 

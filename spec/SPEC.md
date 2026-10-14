@@ -1,6 +1,6 @@
 # Domain Health API — Behavior Specification
 
-**Version:** 0.1.0 (V0)
+**Version:** 0.2.0 (V0)
 **Status:** Ready for implementation
 **Date:** 2026-10-13
 **Owner:** Corina (decisions) · Implementer: Claude Code
